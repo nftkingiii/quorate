@@ -25,8 +25,48 @@ Work in progress. Done and checked so far:
 | Demo set on testnet | `scripts/onchain-setup.mjs` | 13 transactions, all code 0, on `qorechain-diana` |
 | Signing keys | `MsgRegisterPQCKeyV2` | 5 accounts, key type `hybrid`, `possession_proven: true` |
 | Encryption keys | `MsgRegisterKEMKey` | 4 operators; the keys read back from `/qorechain/pqc/v1/kem/{address}` match byte for byte |
+| Advisory scenario on testnet | `scripts/advisory-flow.mjs` | 14 hybrid-signed transactions: 2 epochs, 2 advisories, 8 acknowledgements (2 of them deliberately invalid) |
+| Independent quorum check | `scripts/quorum.mjs` | Reads only the chain and `advisories/`, holds no keys. QSA-001 is 3/4 ready (quorate); QSA-002 is 3/3 ready (quorate). Two acknowledgements are rejected, for the right reasons |
+| Tamper check | `scripts/quorum.mjs` on an edited copy | Adding operator-4 back into `epoch-2.json` breaks the anchor hash, so epoch 2, QSA-002 and its acknowledgements are all refused |
 
-Still to do: seal to the on-chain keys, rotate the epoch on a set change, record the acknowledgement transaction, and build the web app.
+Still to do: the web app (Roster, Advisory and Quorum tabs) and wallet signing through QoreX.
+
+## How it works
+
+Every record is a hybrid-signed QoreChain transaction (secp256k1 + ML-DSA-87). The reader only accepts transactions that carry the `PQCHybridSignature` extension and the chain's `pqc_hybrid_verify` event. Records are transaction memos, at most 256 characters:
+
+```
+quorate/1 epoch <n> members <count> env <sha3-256 of advisories/epoch-<n>.json>
+quorate/1 adv <id> epoch <n> height <target height> blob <sha3-256 of advisories/<id>.blob>
+quorate/1 ack <id> epoch <n> blob <sha3-256 of the advisory blob>
+```
+
+1. **Epoch.** The coordinator reads each member's ML-KEM-1024 key from the chain, seals a fresh epoch key to them (QoreSeal `EpochKeyManager`), publishes `advisories/epoch-<n>.json` (the member list and the sealed key), and anchors its hash on chain.
+2. **Advisory.** The advisory is encrypted under the epoch key (QoreSeal `sealBatch`), published as `advisories/<id>.blob`, and anchored with its hash and the target upgrade height.
+3. **Acknowledgement.** An operator checks both anchors against the files, opens the epoch key with its own ML-KEM secret, decrypts locally, and sends an `ack` transaction to the coordinator, signed with its registered ML-DSA-87 key.
+4. **Quorum.** An acknowledgement counts only when the sender belongs to the advisory's epoch, the epoch and blob hash match the anchor, and it comes after the anchor. One acknowledgement per operator. "Quorate" means more than two thirds of the members have acknowledged.
+5. **Leaving the set.** Removing a member starts a new epoch with a fresh key that the removed member cannot open. Its acknowledgements for later advisories are rejected.
+
+Everything in `advisories/` is ciphertext. Plaintext advisories and epoch keys never leave the operator's or coordinator's machine.
+
+### Advisory scenario transactions (18 November 2026)
+
+| Step | Tx hash | Height |
+|---|---|---|
+| Epoch 1 anchor (operators 1–4) | `831736524FAFE75FAACF9641A7021CF6802B77D829CF973AEC16B0BD2BFF2BC9` | 10331583 |
+| QSA-001 anchor | `A75D1E7A538974938299A7D531BDF7EDB8BA68F9EBA0D991F17D1A47418D4FD6` | 10331586 |
+| Operator 1 ack QSA-001 | `ABDE903492DE92FAF51B0E6915118D2B94C041E69E5E28C3EBB72032730B3BB5` | 10331590 |
+| Operator 2 ack QSA-001 | `BEBFDD792644CDE23F6657DA1B1548E3B60DED6891116B10ABF91183B230244E` | 10331594 |
+| Operator 3 ack QSA-001 | `FBD6105DAD50662124231CA28C4C93FA4B9881C774E399C6945E3A307C1BF7FE` | 10331599 |
+| Epoch 2 anchor (operator 4 removed) | `ADDDD7B2838297F90916CF3681FCBFB81EF5AE715EE55727489D4AE9318BF5D6` | 10331602 |
+| QSA-002 anchor | `1D8DCA349F546A0AAA342CD5E8FA72D11C1AABFD2613AD39C7E94CEC601BCD9F` | 10331606 |
+| Operator 4 ack QSA-002 (**rejected**: not a member of epoch 2) | `994C3218B79055A2B827539F70787333F965B84F3C06F3BDEE0944E5C0F53CF2` | 10331610 |
+| Operator 3 ack of a tampered copy (**rejected**: blob hash) | `F5DE26C580B3342049110B2795038376CB07BDF12294A9239E2EF59D9827F3AA` | 10331613 |
+| Operator 1 ack QSA-002 | `2AA7767F17596BE44545D851C399E62F2ACA45701A2EF417CA4CEABA43D1F082` | 10331617 |
+| Operator 2 ack QSA-002 | `98EAFFBBDD4645472052BFD95390AB094EC07DB9D8D7A36AA95A816C5EE69D1C` | 10331621 |
+| Operator 3 ack QSA-002 | `BC77014E44BA8082B162966575D9E1693BD64A576A2BB7CA8F6AEC46855627E7` | 10331625 |
+
+Both advisories are marked `simulated: true`. They describe no real QoreChain vulnerability.
 
 ### Real validators vs. the demo set
 
@@ -72,7 +112,11 @@ node scripts/keygen.mjs          # creates .keys/accounts.json (gitignored), pri
 node scripts/proof-offline.mjs   # offline sealing proof, no network
 # Fund the coordinator from https://dashboard.qorechain.io/faucet, then:
 node scripts/onchain-setup.mjs   # registers keys on testnet; safe to re-run
+node scripts/advisory-flow.mjs   # the scenario above (runs once per advisories/ folder)
+node scripts/quorum.mjs          # verify from public data only; no keys needed
 ```
+
+`scripts/quorum.mjs` works on a fresh clone with nothing but `npm install`: it reads this repository's `advisories/` folder and the testnet.
 
 The generated accounts are for testnet only. Never send mainnet funds to them.
 
