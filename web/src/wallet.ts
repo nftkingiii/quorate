@@ -67,5 +67,8 @@ export function explain(err: unknown): string {
   if (/reject|denied|cancel/i.test(m)) return "You declined the request in QoreX. Nothing was sent.";
   if (/unsupported chain|selected network|network/i.test(m) && /diana|vladi|network/i.test(m)) return "Switch QoreX to Testnet (qorechain-diana) and try again.";
   if (/insufficient|funds/i.test(m)) return "This account needs a little test QOR for the fee. Claim it from the faucet and try again.";
+  // QoreX answers "wallet is locked" instead of opening itself, and a page cannot open an extension's popup.
+  if (/wallet is locked|locked/i.test(m)) return "QoreX is locked. Click the QoreX icon in your browser's toolbar, unlock it, then click the button here again.";
+  if (/is managed by the wallet itself/i.test(m)) return "QoreX does not let websites send this message: it reserves it for the wallet itself. Nothing was sent.";
   return m;
 }

@@ -22,8 +22,8 @@ function world() {
   };
   const w = {
     files, txs, noKem, tx,
-    epoch(n, members, { from = COORD, countOverride, tamper = false } = {}) {
-      const bytes = enc({ protocol: "quorate/1", chainId: "test", epoch: n, members, envelope: "AA==" });
+    epoch(n, members, { from = COORD, countOverride, tamper = false, sealers } = {}) {
+      const bytes = enc({ protocol: "quorate/1", chainId: "test", epoch: n, members, ...(sealers ? { sealers } : {}), envelope: "AA==" });
       files.set(`epoch-${n}.json`, tamper ? enc({ protocol: "quorate/1", chainId: "test", epoch: n, members: [...members, OUT], envelope: "AA==" }) : bytes);
       return tx(from, COORD, memo.epoch({ epoch: n, members: countOverride ?? members.length, envHash: sha3(bytes) }));
     },
@@ -34,6 +34,8 @@ function world() {
       tx(from, COORD, memo.adv({ id, epoch, height: 9999, blobHash }));
       return blobHash;
     },
+    bind(operator, sealer, extra = {}) { return tx(operator, extra.to ?? COORD, memo.bind({ sealer }), extra); },
+    sealer(sealer, operator, extra = {}) { return tx(sealer, extra.to ?? COORD, memo.sealer({ operator }), extra); },
     ack(from, id, epoch, blobHash, extra = {}) {
       return tx(from, extra.to ?? COORD, memo.ack({ id, epoch, blobHash }), extra);
     },
@@ -208,4 +210,111 @@ test("transactions that are not Quorate records are ignored", async () => {
   w.tx(A, COORD, "quorate/1 ack QSA-1 epoch one blob nope");
   const r = await w.read();
   assert.deepEqual(r.rejected, []);
+});
+
+// Bindings: an operator whose wallet cannot register an encryption key uses a
+// sealing account. Addresses below are real-format qor1 strings so the memo
+// patterns accept them.
+const OP = "qor1d29r40km6savysgcqm4zy6308ya2kljd8dcazm";
+const SEAL = "qor1gxxaq0vznphf4jmhgkyhg8af0nzkqwfrl6a6qd";
+const SEAL2 = "qor1nugsk7fcvcufx5ad4y82zfjwn3kyrn85e3d6cx";
+
+function boundWorld() {
+  const w = world();
+  w.noKem.add(OP); // the operator's own account has no encryption key (QoreX will not register one)
+  return w;
+}
+
+test("a two-way binding lets an operator without its own key join an epoch", async () => {
+  const w = boundWorld();
+  w.bind(OP, SEAL);
+  w.sealer(SEAL, OP);
+  w.epoch(1, [A, OP], { sealers: { [OP]: SEAL } });
+  const h = w.advisory("QSA-1", 1);
+  w.ack(OP, "QSA-1", 1, h); // the acknowledgement still comes from the operator's own account
+  const r = await w.read();
+  assert.deepEqual(r.rejected, []);
+  assert.deepEqual(r.epochs[0].sealers, { [OP]: SEAL });
+  assert.equal(adv(r, "QSA-1").ready, 1);
+  assert.deepEqual(r.bindings.map((b) => [b.operator, b.sealer, b.mutual]), [[OP, SEAL, true]]);
+});
+
+test("a one-sided binding is not enough, in either direction", async () => {
+  for (const half of ["bind", "sealer"]) {
+    const w = boundWorld();
+    if (half === "bind") w.bind(OP, SEAL); else w.sealer(SEAL, OP);
+    w.epoch(1, [A, OP], { sealers: { [OP]: SEAL } });
+    const r = await w.read();
+    assert.equal(r.epochs.length, 0, half);
+    assert.deepEqual(reasons(r), [`epoch 1 names a sealing account that is not bound to ${OP}`], half);
+  }
+});
+
+test("a sealing account that vouches for someone else does not count", async () => {
+  const w = boundWorld();
+  w.bind(OP, SEAL);
+  w.sealer(SEAL, A); // SEAL claims a different operator
+  w.epoch(1, [A, OP], { sealers: { [OP]: SEAL } });
+  assert.deepEqual(reasons(await w.read()), [`epoch 1 names a sealing account that is not bound to ${OP}`]);
+});
+
+test("an epoch file naming a different sealer than the binding is refused", async () => {
+  const w = boundWorld();
+  w.bind(OP, SEAL);
+  w.sealer(SEAL, OP);
+  w.epoch(1, [A, OP], { sealers: { [OP]: SEAL2 } });
+  assert.deepEqual(reasons(await w.read()), [`epoch 1 names a sealing account that is not bound to ${OP}`]);
+});
+
+test("a binding made after the epoch anchor does not count for that epoch", async () => {
+  const w = boundWorld();
+  w.epoch(1, [A, OP], { sealers: { [OP]: SEAL } });
+  w.bind(OP, SEAL);
+  w.sealer(SEAL, OP);
+  const r = await w.read();
+  assert.equal(r.epochs.length, 0);
+  assert.equal(r.bindings[0].mutual, true, "the binding itself is valid, just too late");
+});
+
+test("a bound sealing account without an encryption key leaves the member unreachable", async () => {
+  const w = boundWorld();
+  w.noKem.add(SEAL);
+  w.bind(OP, SEAL);
+  w.sealer(SEAL, OP);
+  w.epoch(1, [A, OP], { sealers: { [OP]: SEAL } });
+  assert.deepEqual(reasons(await w.read()), ["epoch 1 has members without an encryption key"]);
+});
+
+test("a member without its own key and no sealer in the file is unreachable", async () => {
+  const w = boundWorld();
+  w.bind(OP, SEAL);
+  w.sealer(SEAL, OP);
+  w.epoch(1, [A, OP]);
+  assert.deepEqual(reasons(await w.read()), ["epoch 1 has members without an encryption key"]);
+});
+
+test("binding records must go to the coordinator, carry the ML-DSA-87 layer and name someone else", async () => {
+  const w = boundWorld();
+  w.bind(OP, SEAL, { to: A });
+  w.sealer(SEAL, OP, { hybrid: false });
+  w.bind(OP, OP);
+  assert.deepEqual(reasons(await w.read()), [
+    "bind record not sent to the coordinator",
+    "not hybrid-signed",
+    "bind record names its own sender",
+  ]);
+});
+
+test("rebinding to a new sealing account replaces the old one for later epochs", async () => {
+  const w = boundWorld();
+  w.bind(OP, SEAL);
+  w.sealer(SEAL, OP);
+  w.epoch(1, [A, OP], { sealers: { [OP]: SEAL } });
+  w.bind(OP, SEAL2);
+  w.sealer(SEAL2, OP);
+  w.epoch(2, [A, OP], { sealers: { [OP]: SEAL } }); // stale: OP now binds SEAL2
+  w.epoch(3, [A, OP], { sealers: { [OP]: SEAL2 } });
+  const r = await w.read();
+  assert.deepEqual(r.epochs.map((e) => e.epoch), [1, 3]);
+  assert.deepEqual(reasons(r), [`epoch 2 names a sealing account that is not bound to ${OP}`]);
 });
