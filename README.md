@@ -28,8 +28,27 @@ Work in progress. Done and checked so far:
 | Advisory scenario on testnet | `scripts/advisory-flow.mjs` | 14 hybrid-signed transactions: 2 epochs, 2 advisories, 8 acknowledgements (2 of them deliberately invalid) |
 | Independent quorum check | `scripts/quorum.mjs` | Reads only the chain and `advisories/`, holds no keys. QSA-001 is 3/4 ready (quorate); QSA-002 is 3/3 ready (quorate). Two acknowledgements are rejected, for the right reasons |
 | Tamper check | `scripts/quorum.mjs` on an edited copy | Adding operator-4 back into `epoch-2.json` breaks the anchor hash, so epoch 2, QSA-002 and its acknowledgements are all refused |
+| Web app (local) | `web/`, `server/index.mjs` | Quorum, Advisory and Roster tabs read testnet and mainnet live through a read-only server that holds no keys |
+| Draft sealing | `scripts/check-draft-interop.mjs` | Sealed the way the Advisory tab seals, using the keys exactly as the server hands them to the browser: operators 1–3 open the draft, operator 4 cannot |
+| Real validator sets | Roster tab, 19 November 2026 | 0 of 8 mainnet and 0 of 4 testnet validators have an encryption key; their signing keys are hybrid, without proof of possession |
 
-Still to do: the web app (Roster, Advisory and Quorum tabs) and wallet signing through QoreX.
+Still to do: signing with the QoreX wallet (anchoring and acknowledgements from the app), a public deployment, and the demo video.
+
+## The app
+
+```sh
+npm install
+npm run dev:server   # read-only server on :8787 (reads the chain, applies lib/quorum-core.mjs)
+npm run dev:web      # Vite on :5173, proxies /api and /advisories to the server
+```
+
+QoreChain's public REST endpoints send no CORS headers, so the browser cannot read the chain directly. `server/index.mjs` does it instead. It answers only `GET`, serves only the files in `advisories/`, caches chain reads for 15–30 seconds, and holds no keys. Sealing happens in the browser with `@qorechain/qoreseal`; only ciphertext and hashes leave the page.
+
+- **Quorum.** Each advisory as a ring of operator lamps, lit when an acknowledgement counts, with the threshold tick, the halt height and the blocks left (block time measured over the last 1,000 blocks). Refused records list why they do not count.
+- **Advisory.** Anchored ciphertext to download, and a draft composer that seals to the current epoch's ML-KEM-1024 keys as read from the chain. Anchoring needs the coordinator's QoreX signature and is not wired yet; the button says so.
+- **Roster.** The demo set beside the real testnet and mainnet validator sets, with each operator's signing key and encryption key status.
+
+The interface had an [unslop](https://github.com/heydamir/unslop) pass (Damir Sokolovsky, CC BY 4.0).
 
 ## How it works
 
@@ -126,6 +145,8 @@ Built on the QoreChain kits, used under Apache-2.0:
 
 - [`@qorechain/sdk`](https://www.npmjs.com/package/@qorechain/sdk) 0.14.0: accounts, hybrid signing, PQC and KEM key registration
 - [`@qorechain/qoreseal`](https://github.com/qorechain/qoreseal) 0.1.0: ML-KEM-1024 envelopes and epoch keys
+
+Also: React and Vite for the app, [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) for SHA3-256 in the browser, IBM Plex Sans and Plex Mono (SIL Open Font License), and the [unslop](https://github.com/heydamir/unslop) design checklist by Damir Sokolovsky (CC BY 4.0).
 
 QoreSeal's README says its construction is pending external review before 1.0. Quorate inherits that limitation.
 

@@ -11,3 +11,4 @@ SOURCES.md
 research/
 receipts/
 *.ics
+.claude/
