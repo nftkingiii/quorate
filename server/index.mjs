@@ -17,6 +17,7 @@ import { DEFAULT_COORDINATOR, readQuorum } from "../lib/quorum-core.mjs";
 import { chainClock } from "../lib/protocol.mjs";
 import { toAccount } from "../lib/bech32.mjs";
 import { isQorAddress, keyStatus as keyStatusOf, readAccount } from "../lib/accounts.mjs";
+import { MAX_TX_BYTES, checkRelayTx, rateLimiter } from "../lib/relay.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DIST = join(ROOT, "web", "dist");
@@ -113,6 +114,57 @@ async function currentEpoch() {
 
 const account = (address) => readAccount(getJson, NETWORKS.testnet.rest, address);
 
+// ---- The relay -------------------------------------------------------------
+const allowRelay = rateLimiter({ perKey: 10, globalMax: 200, windowMs: 10 * 60 * 1000 });
+// Behind a proxy that sets X-Real-IP (Railway does), set TRUST_PROXY=1 so the limit is per visitor.
+const visitor = (req) => (process.env.TRUST_PROXY === "1" && req.headers["x-real-ip"]) || req.socket.remoteAddress || "unknown";
+
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0;
+    req.on("data", (c) => { size += c.length; if (size > limit) { reject(Object.assign(new Error("too large"), { tooLarge: true })); req.pause(); } else chunks.push(c); });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+async function relayRoute(req, res) {
+  if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) return send(res, 415, { error: "send JSON" });
+  if (!allowRelay(String(visitor(req)))) return send(res, 429, { error: "Too many transactions from here; wait a few minutes" });
+  let txBytes, raw;
+  try {
+    raw = await readBody(req, MAX_TX_BYTES * 2);
+  } catch (err) {
+    // Answer first, then drop the connection so an oversized upload stops.
+    res.on("finish", () => req.destroy());
+    return send(res, err.tooLarge ? 413 : 400, { error: err.tooLarge ? "Transaction too large" : "Could not read the request" });
+  }
+  try {
+    const body = JSON.parse(raw.toString("utf8"));
+    if (typeof body.txBytes !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(body.txBytes)) throw new Error("bad");
+    txBytes = new Uint8Array(Buffer.from(body.txBytes, "base64"));
+  } catch {
+    return send(res, 400, { error: "Expected {\"txBytes\": base64}" });
+  }
+  const verdict = checkRelayTx(txBytes, DEFAULT_COORDINATOR);
+  if (!verdict.ok) return send(res, 400, { error: `Refused: ${verdict.reason}` });
+  try {
+    const r = await fetch(`${NETWORKS.testnet.rest}/cosmos/tx/v1beta1/txs`, {
+      method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({ tx_bytes: Buffer.from(txBytes).toString("base64"), mode: "BROADCAST_MODE_SYNC" }),
+    });
+    const out = await r.json().catch(() => ({}));
+    const tr = out.tx_response;
+    if (!tr) return send(res, 502, { error: "The chain did not accept the broadcast. Try again shortly." });
+    if (tr.code !== 0) return send(res, 400, { error: `The chain refused it (code ${tr.code}): ${String(tr.raw_log ?? "").slice(0, 300)}` });
+    console.log(`relayed ${verdict.kind} ${tr.txhash}`);
+    return send(res, 200, { txHash: tr.txhash, kind: verdict.kind });
+  } catch (err) {
+    console.error("relay", err.message);
+    return send(res, 502, { error: "Could not reach the chain. Try again shortly." });
+  }
+}
+
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2" };
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
@@ -127,8 +179,10 @@ function send(res, status, body, type = "application/json") {
 }
 
 const server = createServer(async (req, res) => {
-  if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "read-only" });
   const url = new URL(req.url, "http://localhost");
+  // One write route: /api/relay forwards a sealing account's signed transaction (lib/relay.mjs).
+  if (req.method === "POST" && url.pathname === "/api/relay") return relayRoute(req, res);
+  if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "read-only, except POST /api/relay" });
   try {
     if (url.pathname === "/api/quorum") return send(res, 200, await cached("quorum", 15000, quorum));
     if (url.pathname === "/api/roster") {
@@ -141,6 +195,13 @@ const server = createServer(async (req, res) => {
       const address = url.searchParams.get("address") ?? "";
       if (!isQorAddress(address)) return send(res, 400, { error: "address must be a qor1 account address" });
       return send(res, 200, await cached(`account:${address}`, 5000, () => account(address)));
+    }
+    if (url.pathname === "/api/tx") {
+      const hash = (url.searchParams.get("hash") ?? "").toUpperCase();
+      if (!/^[0-9A-F]{64}$/.test(hash)) return send(res, 400, { error: "hash must be 64 hex characters" });
+      const t = await getJson(`${NETWORKS.testnet.rest}/cosmos/tx/v1beta1/txs/${hash}`).catch(() => null);
+      const r = t?.tx_response;
+      return send(res, 200, r ? { found: true, hash, code: r.code, height: Number(r.height), rawLog: r.code ? String(r.raw_log ?? "").slice(0, 300) : undefined } : { found: false, hash });
     }
     if (url.pathname === "/api/health") return send(res, 200, { ok: true });
     if (url.pathname.startsWith("/advisories/")) {

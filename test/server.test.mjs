@@ -20,11 +20,28 @@ before(async () => {
 });
 after(() => proc?.kill());
 
-test("only GET and HEAD are answered", async () => {
+test("only GET and HEAD are answered, except POST to the relay", async () => {
   for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
     const res = await fetch(`${BASE}/api/quorum`, { method });
     assert.equal(res.status, 405, method);
   }
+  for (const method of ["PUT", "DELETE"]) assert.equal((await fetch(`${BASE}/api/relay`, { method })).status, 405, method);
+});
+
+test("the relay refuses anything that is not a sealing-account transaction, without contacting the chain", async () => {
+  const post = (body, type = "application/json") => fetch(`${BASE}/api/relay`, { method: "POST", headers: { "content-type": type }, body });
+  assert.equal((await post("{}", "text/plain")).status, 415);
+  assert.equal((await post("not json")).status, 400);
+  assert.equal((await post(JSON.stringify({ txBytes: "!!!" }))).status, 400);
+  const garbage = await post(JSON.stringify({ txBytes: Buffer.from("hello").toString("base64") }));
+  assert.equal(garbage.status, 400);
+  assert.match((await garbage.json()).error, /^Refused: /);
+  assert.equal((await post("x".repeat(64 * 1024))).status, 413, "oversized body");
+});
+
+test("transaction status lookups validate the hash", async () => {
+  assert.equal((await fetch(`${BASE}/api/tx?hash=nothex`)).status, 400);
+  assert.equal((await fetch(`${BASE}/api/tx?hash=${"G".repeat(64)}`)).status, 400);
 });
 
 test("advisory files: only the allow-listed names, nothing else in the project", async () => {
