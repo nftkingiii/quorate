@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Advisory, QuorumData } from "./api";
-import { ROLES, blocksToTime, fmt, short } from "./api";
+import { ROLES, blocksToTime, fmt, nameOf, short } from "./api";
 import { Chevron, ErrorBox, Lamp, Placeholder, QuorumRing, Simulated, Tag, TxLinks } from "./ui";
 
 export function QuorumView({ q, error, onRetry, goRoster }: { q: QuorumData | null; error: string | null; onRetry: () => void; goRoster: () => void }) {
@@ -42,7 +42,7 @@ export function QuorumView({ q, error, onRetry, goRoster }: { q: QuorumData | nu
                     <td>
                       <span className="who">
                         <Lamp state="off" label="Refused" />
-                        <span><span className="name">{r.from ? ROLES[r.from] ?? short(r.from) : "Unknown"}</span>{" "}{r.from && ROLES[r.from] && <Simulated />}</span>
+                        <span><span className="name">{r.from ? nameOf(r.from) : "Unknown"}</span>{" "}{r.from && ROLES[r.from] && <Simulated />}</span>
                       </span>
                     </td>
                     <td className="mono">{r.advisory ?? "—"}</td>
@@ -124,7 +124,7 @@ function AdvisoryCard({ a, height, blockSeconds }: { a: Advisory; height: number
           <div className="evid-row">
             <span className="meta">Operators</span>
             <span className="who" style={{ gap: 8 }}>
-              {a.roster.map((m) => <Lamp key={m.address} state={m.ack ? "lit" : "unlit"} label={`${ROLES[m.address] ?? m.address}: ${m.ack ? "ready" : "waiting"}`} />)}
+              {a.roster.map((m) => <Lamp key={m.address} state={m.ack ? "lit" : "unlit"} label={`${nameOf(m.address)}: ${m.ack ? "ready" : "waiting"}`} />)}
             </span>
           </div>
         </div>
@@ -144,7 +144,7 @@ function AdvisoryCard({ a, height, blockSeconds }: { a: Advisory; height: number
                     <td>
                       <span className="who">
                         <Lamp state={m.ack ? "lit" : "unlit"} label={m.ack ? "Ready" : "Waiting"} />
-                        <span><span className="name">{ROLES[m.address] ?? "Operator"}</span> <Simulated /></span>
+                        <span><span className="name">{nameOf(m.address)}</span> {ROLES[m.address] && <Simulated />}</span>
                       </span>
                     </td>
                     <td className="mono faint">{short(m.address, 12, 6)}</td>

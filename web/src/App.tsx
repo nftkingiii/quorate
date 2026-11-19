@@ -4,12 +4,14 @@ import { ago, fmt, useResource } from "./api";
 import { QuorumView } from "./QuorumView";
 import { AdvisoryView } from "./AdvisoryView";
 import { RosterView } from "./RosterView";
+import { OperatorView } from "./OperatorView";
 import { RefreshIcon } from "./ui";
 
-type Tab = "quorum" | "advisory" | "roster";
+type Tab = "quorum" | "advisory" | "operator" | "roster";
 const TABS: { id: Tab; label: string }[] = [
   { id: "quorum", label: "Quorum" },
   { id: "advisory", label: "Advisory" },
+  { id: "operator", label: "Operator" },
   { id: "roster", label: "Roster" },
 ];
 const fromHash = (): Tab => {
@@ -57,11 +59,12 @@ export function App() {
       <main className="shell" id="panel" role="tabpanel">
         {tab === "quorum" && <QuorumView q={q.data} error={q.error} onRetry={q.reload} goRoster={() => go("roster")} />}
         {tab === "advisory" && <AdvisoryView q={q.data} />}
+        {tab === "operator" && <OperatorView q={q.data} reloadQuorum={q.reload} />}
         {tab === "roster" && <RosterView />}
         <footer className="foot">
           <span>Quorate · built for Build Before Q-Day</span>
           <a href="https://github.com/nftkingiii/quorate" target="_blank" rel="noreferrer">Source and evidence</a>
-          <span>Read only: this page holds no keys and signs nothing</span>
+          <span>The server holds no keys; your sealing key stays in this browser and QoreX does the signing</span>
           <span>Interface pass after <a href="https://github.com/heydamir/unslop" target="_blank" rel="noreferrer">unslop</a> by Damir Sokolovsky, CC BY 4.0</span>
         </footer>
       </main>

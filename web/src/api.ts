@@ -25,6 +25,12 @@ export type CurrentEpoch = {
   members: { address: string; name: string | null; simulated: boolean; mlkemPublicKey: string | null }[];
 };
 
+export type AccountData = {
+  address: string; signingKey: KeyState;
+  encryptionKey: { found: boolean; publicKeySha3: string | null } | "unknown";
+  balanceUqor: string | null; readAt: string;
+};
+
 export async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   const body = await res.json().catch(() => ({}));
@@ -60,6 +66,11 @@ export const ROLES: Record<string, string> = {
   qor1aq8tx4y2jke8snqgu6ajdav23nyyw7cznt9c4q: "Operator 3",
   qor17p9ekrjnwcd5qmwjhz4g5dc38w6f9dx9f2anxt: "Operator 4",
 };
+/** The official QoreX wallet mock used for the end-to-end test: a test double, not a person's wallet. */
+export const TEST_WALLETS: Record<string, string> = {
+  qor1d29r40km6savysgcqm4zy6308ya2kljd8dcazm: "QoreX mock (test wallet)",
+};
+export const nameOf = (a: string) => ROLES[a] ?? TEST_WALLETS[a] ?? "QoreX operator";
 export const short = (s: string, a = 10, b = 6) => (s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s);
 export const fmt = (n: number) => n.toLocaleString("en-US");
 export const restTx = (hash: string) => `https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/${hash}`;

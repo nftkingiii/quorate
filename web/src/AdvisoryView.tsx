@@ -133,7 +133,7 @@ function Composer({ epoch, q }: { epoch: CurrentEpoch; q: QuorumData }) {
       <div className="recips" aria-label="Recipients">
         {usable.map((m) => (
           <span className="recip" key={m.address}>
-            <span className="name">{m.name ?? "Operator"}</span><Simulated />
+            <span className="name">{m.name ?? "Operator"}</span>{m.simulated && <Simulated />}
           </span>
         ))}
       </div>

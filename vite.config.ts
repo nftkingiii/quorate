@@ -12,6 +12,14 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:8787",
       "/advisories": "http://localhost:8787",
+      // Development only, for the QoreX wallet mock: the mock runs inside the
+      // page, so its testnet REST calls need a same-origin path. The real QoreX
+      // extension calls the chain itself. Never part of the production server.
+      "/qore-rest": {
+        target: "https://api-testnet.qore.host",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/qore-rest/, ""),
+      },
     },
   },
 });

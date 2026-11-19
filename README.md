@@ -31,8 +31,22 @@ Work in progress. Done and checked so far:
 | Web app (local) | `web/`, `server/index.mjs` | Quorum, Advisory and Roster tabs read testnet and mainnet live through a read-only server that holds no keys |
 | Draft sealing | `scripts/check-draft-interop.mjs` | Sealed the way the Advisory tab seals, using the keys exactly as the server hands them to the browser: operators 1–3 open the draft, operator 4 cannot |
 | Real validator sets | Roster tab, 19 November 2026 | 0 of 8 mainnet and 0 of 4 testnet validators have an encryption key; their signing keys are hybrid, without proof of possession |
+| QoreX operator flow | Operator tab driven by `@qorechain/qorex-wallet-mock` 0.1.0 | Connect, create a sealing key, register it through QoreX `signAndBroadcast` (shielded), be added in epoch 3, open QSA-003 locally, acknowledge through QoreX (shielded); `scripts/quorum.mjs` counts it: QSA-003 1/4 ready |
+| Backup safety | Operator tab | A wrong passphrase is refused; the right one restores the key, and it must match the key registered on chain |
 
-Still to do: signing with the QoreX wallet (anchoring and acknowledgements from the app), a public deployment, and the demo video.
+The QoreX flow was exercised with the official QoreX wallet mock, a test double that signs for real on testnet with the same hybrid scheme. It has not yet been run with the QoreX extension or app themselves.
+
+Still to do: an operator acknowledgement from a real QoreX wallet, a public deployment, and the demo video.
+
+### QoreX wallet test (19 November 2026)
+
+| Step | Tx hash | Height |
+|---|---|---|
+| Fund the test wallet `qor1d29r40km6savysgcqm4zy6308ya2kljd8dcazm` (3 QOR) | `4461A34388E2FC8F396B5F2633880A74D364A38A1105C8F559DF3698B9C50A1D` | |
+| Test wallet registers its ML-KEM-1024 key through QoreX `signAndBroadcast` | `FF4874887907DCE82E7F9626EA6631E51E0AE30131B56170B4BE56592C2FD585` | 10361739 |
+| Epoch 3 anchor (operators 1–3 and the test wallet) | `9577C7B29B68818E34E4196179AD895FBFC28FC4F74024A3345A2154274C3AC2` | 10361786 |
+| QSA-003 anchor | `0052D7A2C4C386422E95CA54BEA324D462FBA16D1EEDA44D421A2DC05552B96D` | 10361794 |
+| Test wallet acknowledges QSA-003 through QoreX `signAndBroadcast` | `0863F08758E81A032F6EF923605DEAAF825A9FD4D335752672BA948B827EEC65` | 10361881 |
 
 ## The app
 
@@ -42,10 +56,20 @@ npm run dev:server   # read-only server on :8787 (reads the chain, applies lib/q
 npm run dev:web      # Vite on :5173, proxies /api and /advisories to the server
 ```
 
+Coordinator actions (signed by the coordinator key in `.keys/`):
+
+```sh
+node scripts/coordinator.mjs rotate --add qor1...      # next epoch, sealed to the new member list
+node scripts/coordinator.mjs advisory --id QSA-004 --title "..." --simulated
+```
+
+The dev server also proxies `/qore-rest` to the testnet REST API. That exists only so the QoreX wallet mock, which runs inside the page, can reach the chain during tests; the real QoreX extension calls the chain itself, and the production server has no such route.
+
 QoreChain's public REST endpoints send no CORS headers, so the browser cannot read the chain directly. `server/index.mjs` does it instead. It answers only `GET`, serves only the files in `advisories/`, caches chain reads for 15–30 seconds, and holds no keys. Sealing happens in the browser with `@qorechain/qoreseal`; only ciphertext and hashes leave the page.
 
 - **Quorum.** Each advisory as a ring of operator lamps, lit when an acknowledgement counts, with the threshold tick, the halt height and the blocks left (block time measured over the last 1,000 blocks). Refused records list why they do not count.
-- **Advisory.** Anchored ciphertext to download, and a draft composer that seals to the current epoch's ML-KEM-1024 keys as read from the chain. Anchoring needs the coordinator's QoreX signature and is not wired yet; the button says so.
+- **Advisory.** Anchored ciphertext to download, and a draft composer that seals to the current epoch's ML-KEM-1024 keys as read from the chain. Anchoring stays with the coordinator script (`scripts/coordinator.mjs`); the button says so.
+- **Operator.** For a validator operator with QoreX, one step at a time: connect, create an ML-KEM-1024 sealing key in the browser and download a passphrase-encrypted backup (PBKDF2-SHA-256, 600,000 rounds, then AES-256-GCM, with the address and key hash bound in), register the key through QoreX, then open advisories sealed to you and acknowledge them through QoreX. QoreX adds the ML-DSA-87 layer; the page reports whether the committed transaction carries it. The sealing key lives in page memory only: never in local storage, never sent to the server.
 - **Roster.** The demo set beside the real testnet and mainnet validator sets, with each operator's signing key and encryption key status.
 
 The interface had an [unslop](https://github.com/heydamir/unslop) pass (Damir Sokolovsky, CC BY 4.0).
@@ -146,7 +170,7 @@ Built on the QoreChain kits, used under Apache-2.0:
 - [`@qorechain/sdk`](https://www.npmjs.com/package/@qorechain/sdk) 0.14.0: accounts, hybrid signing, PQC and KEM key registration
 - [`@qorechain/qoreseal`](https://github.com/qorechain/qoreseal) 0.1.0: ML-KEM-1024 envelopes and epoch keys
 
-Also: React and Vite for the app, [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) for SHA3-256 in the browser, IBM Plex Sans and Plex Mono (SIL Open Font License), and the [unslop](https://github.com/heydamir/unslop) design checklist by Damir Sokolovsky (CC BY 4.0).
+Also: [`@qorechain/qorex-types`](https://github.com/qorechain/qorex-integrations) 0.1.0 for QoreX detection and `signAndBroadcast`, `@qorechain/qorex-wallet-mock` 0.1.0 for the wallet test, React and Vite for the app, [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) for SHA3-256 in the browser, IBM Plex Sans and Plex Mono (SIL Open Font License), and the [unslop](https://github.com/heydamir/unslop) design checklist by Damir Sokolovsky (CC BY 4.0).
 
 QoreSeal's README says its construction is pending external review before 1.0. Quorate inherits that limitation.
 

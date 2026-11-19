@@ -15,7 +15,8 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_COORDINATOR, readQuorum } from "../lib/quorum-core.mjs";
 import { chainClock } from "../lib/protocol.mjs";
-import { toAccount } from "../lib/bech32.mjs";
+import { decode, toAccount } from "../lib/bech32.mjs";
+import { sha3 } from "../lib/protocol.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DIST = join(ROOT, "web", "dist");
@@ -31,12 +32,16 @@ const ROLES = {
   qor1nugsk7fcvcufx5ad4y82zfjwn3kyrn85e3d6cx: "Operator 2",
   qor1aq8tx4y2jke8snqgu6ajdav23nyyw7cznt9c4q: "Operator 3",
   qor17p9ekrjnwcd5qmwjhz4g5dc38w6f9dx9f2anxt: "Operator 4",
+  qor1d29r40km6savysgcqm4zy6308ya2kljd8dcazm: "QoreX mock (test wallet)",
 };
+const SIMULATED = new Set(Object.keys(ROLES).filter((a) => ROLES[a].startsWith("Operator")));
 const ADVISORY_FILE = /^(epoch-\d{1,6}\.json|[A-Za-z0-9-]{1,32}\.blob)$/;
 
 // Small TTL cache so a busy page does not hammer the public endpoints.
 const cache = new Map();
+const CACHE_MAX = 500; // bounds memory when many different accounts are looked up
 async function cached(key, ttlMs, fn) {
+  if (cache.size > CACHE_MAX) for (const k of [...cache.keys()].slice(0, 100)) cache.delete(k);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < ttlMs) return hit.value;
   if (hit?.pending) return hit.pending;
@@ -82,7 +87,7 @@ async function roster(set) {
     const all = [...new Set(q.epochs.flatMap((e) => e.members))];
     const latest = q.epochs.at(-1);
     const rows = await Promise.all(all.map(async (address) => ({
-      address, name: ROLES[address] ?? address.slice(0, 12), simulated: true,
+      address, name: ROLES[address] ?? "QoreX operator", simulated: SIMULATED.has(address),
       epochs: q.epochs.filter((e) => e.members.includes(address)).map((e) => e.epoch),
       inCurrentEpoch: latest?.members.includes(address) ?? false,
       ...(await keyStatus(NETWORKS.testnet.rest, address)),
@@ -110,10 +115,34 @@ async function currentEpoch() {
   if (!latest) return { epoch: null, members: [] };
   const members = await Promise.all(latest.members.map(async (address) => {
     const k = await getJson(`${NETWORKS.testnet.rest}/qorechain/pqc/v1/kem/${address}`);
-    return { address, name: ROLES[address] ?? null, simulated: true, mlkemPublicKey: k.key?.public_key ?? null };
+    return { address, name: ROLES[address] ?? "QoreX operator", simulated: SIMULATED.has(address), mlkemPublicKey: k.key?.public_key ?? null };
   }));
   return { epoch: latest.epoch, anchor: latest.anchor, chainId: NETWORKS.testnet.chainId, members };
 }
+
+/** One testnet account: what an operator needs to know about itself. */
+async function account(address) {
+  const rest = NETWORKS.testnet.rest;
+  const [status, kem, bank] = await Promise.all([
+    keyStatus(rest, address),
+    getJson(`${rest}/qorechain/pqc/v1/kem/${address}`).catch(() => null),
+    getJson(`${rest}/cosmos/bank/v1beta1/balances/${address}`).catch(() => null),
+  ]);
+  // A failed read must never look like "no key registered": fail the request
+  // (not cached) so the page keeps what it knew and tries again.
+  if (!kem || status.signingKey === "unknown") throw new Error("Could not read this account from the chain");
+  const pk = kem.key?.public_key ?? null;
+  return {
+    address,
+    signingKey: status.signingKey,
+    encryptionKey: kem ? { found: kem.found === true, publicKeySha3: pk ? sha3(Buffer.from(pk, "base64")) : null } : "unknown",
+    balanceUqor: bank?.balances?.find((b) => b.denom === "uqor")?.amount ?? (bank ? "0" : null),
+    readAt: new Date().toISOString(),
+  };
+}
+const isQorAddress = (a) => {
+  try { const d = decode(a); return d.hrp === "qor" && a === a.toLowerCase() && d.words.length === 32; } catch { return false; }
+};
 
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2" };
 const SECURITY_HEADERS = {
@@ -139,6 +168,11 @@ const server = createServer(async (req, res) => {
       return send(res, 200, await cached(`roster:${set}`, 30000, () => roster(set)));
     }
     if (url.pathname === "/api/epoch/current") return send(res, 200, await cached("epoch", 15000, currentEpoch));
+    if (url.pathname === "/api/account") {
+      const address = url.searchParams.get("address") ?? "";
+      if (!isQorAddress(address)) return send(res, 400, { error: "address must be a qor1 account address" });
+      return send(res, 200, await cached(`account:${address}`, 5000, () => account(address)));
+    }
     if (url.pathname === "/api/health") return send(res, 200, { ok: true });
     if (url.pathname.startsWith("/advisories/")) {
       const bytes = await readAdvisory(url.pathname.slice("/advisories/".length));
