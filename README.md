@@ -163,6 +163,10 @@ node scripts/quorum.mjs          # verify from public data only; no keys needed
 
 The generated accounts are for testnet only. Never send mainnet funds to them.
 
+## How it was built
+
+With an AI coding agent (Claude Code). What the AI wrote, what the builder decided, how each claim was checked and where the AI got things wrong are in [AI_USAGE.md](AI_USAGE.md).
+
 ## Credits
 
 Built on the QoreChain kits, used under Apache-2.0:
