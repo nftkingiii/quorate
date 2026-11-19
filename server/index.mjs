@@ -10,13 +10,13 @@
 //   everything else                      web/dist (single-page app)
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { extname, join, normalize } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_COORDINATOR, readQuorum } from "../lib/quorum-core.mjs";
 import { chainClock } from "../lib/protocol.mjs";
-import { decode, toAccount } from "../lib/bech32.mjs";
-import { sha3 } from "../lib/protocol.mjs";
+import { toAccount } from "../lib/bech32.mjs";
+import { isQorAddress, keyStatus as keyStatusOf, readAccount } from "../lib/accounts.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DIST = join(ROOT, "web", "dist");
@@ -65,16 +65,7 @@ const readAdvisory = async (name) => {
   return existsSync(p) ? new Uint8Array(await readFile(p)) : null;
 };
 
-async function keyStatus(rest, address) {
-  const [pqc, kem] = await Promise.all([
-    getJson(`${rest}/qorechain/pqc/v1/account/${address}`).catch(() => null),
-    getJson(`${rest}/qorechain/pqc/v1/kem/${address}`).catch(() => null),
-  ]);
-  return {
-    signingKey: pqc ? (pqc.found ? { type: pqc.account?.key_type ?? null, possessionProven: pqc.account?.possession_proven === true } : null) : "unknown",
-    encryptionKey: kem ? kem.found === true : "unknown",
-  };
-}
+const keyStatus = (rest, address) => keyStatusOf(getJson, rest, address);
 
 async function quorum() {
   const [q, clock] = await Promise.all([readQuorum({ coordinator: DEFAULT_COORDINATOR, readFile: readAdvisory }), chainClock()]);
@@ -120,29 +111,7 @@ async function currentEpoch() {
   return { epoch: latest.epoch, anchor: latest.anchor, chainId: NETWORKS.testnet.chainId, members };
 }
 
-/** One testnet account: what an operator needs to know about itself. */
-async function account(address) {
-  const rest = NETWORKS.testnet.rest;
-  const [status, kem, bank] = await Promise.all([
-    keyStatus(rest, address),
-    getJson(`${rest}/qorechain/pqc/v1/kem/${address}`).catch(() => null),
-    getJson(`${rest}/cosmos/bank/v1beta1/balances/${address}`).catch(() => null),
-  ]);
-  // A failed read must never look like "no key registered": fail the request
-  // (not cached) so the page keeps what it knew and tries again.
-  if (!kem || status.signingKey === "unknown") throw new Error("Could not read this account from the chain");
-  const pk = kem.key?.public_key ?? null;
-  return {
-    address,
-    signingKey: status.signingKey,
-    encryptionKey: kem ? { found: kem.found === true, publicKeySha3: pk ? sha3(Buffer.from(pk, "base64")) : null } : "unknown",
-    balanceUqor: bank?.balances?.find((b) => b.denom === "uqor")?.amount ?? (bank ? "0" : null),
-    readAt: new Date().toISOString(),
-  };
-}
-const isQorAddress = (a) => {
-  try { const d = decode(a); return d.hrp === "qor" && a === a.toLowerCase() && d.words.length === 32; } catch { return false; }
-};
+const account = (address) => readAccount(getJson, NETWORKS.testnet.rest, address);
 
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2" };
 const SECURITY_HEADERS = {
@@ -183,12 +152,15 @@ const server = createServer(async (req, res) => {
     // Static app with single-page fallback.
     const safe = normalize(decodeURIComponent(url.pathname)).replace(/^([/\\])+/, "");
     let file = join(DIST, safe);
-    if (!file.startsWith(DIST) || !existsSync(file) || safe === "") file = join(DIST, "index.html");
+    const isFile = (f) => { try { return statSync(f).isFile(); } catch { return false; } };
+    // Anything that is not a real file inside the build (folders, missing paths, escapes) gets the app shell.
+    if (!file.startsWith(DIST + sep) || !isFile(file)) file = join(DIST, "index.html");
     if (!existsSync(file)) return send(res, 503, "The app is not built yet: run npm run build.", "text/plain; charset=utf-8");
     return send(res, 200, await readFile(file), TYPES[extname(file)] ?? "application/octet-stream");
   } catch (err) {
     console.error(url.pathname, err.message);
-    return send(res, 502, { error: "Could not read the chain right now. Try again shortly.", detail: err.message });
+    // Internal details stay in the log; the page gets a plain message.
+    return send(res, 502, { error: "Could not read the chain right now. Try again shortly." });
   }
 });
 

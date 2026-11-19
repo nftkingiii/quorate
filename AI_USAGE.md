@@ -23,7 +23,7 @@ The work ran as one long conversation in which the agent could read the web, run
 1. **Read primary sources first.** The agent read the fest rules and prize pages, the QoreChain version history (v3.2.3 to v3.2.8), and the published kit packages themselves (`@qorechain/sdk`, `@qorechain/qoreseal`, `@qorechain/qorex-types`, `@qorechain/qorex-wallet-mock`). It also queried the live testnet and mainnet, which is how it found that none of the 12 bonded validators had an encryption key registered.
 2. **Propose, then wait for a human decision** on anything that changes direction or touches a wallet.
 3. **Build the smallest proof first:** an offline sealing proof (9/9), then keys on chain, then the full advisory scenario, then the app.
-4. **Verify independently.** Each on-chain step is checked with a separate read (transaction code, `PQCHybridSignature` extension, `pqc_hybrid_verify` event, byte-for-byte key read-back). The quorum is recomputed by `scripts/quorum.mjs` from public data alone, including from a fresh clone.
+4. **Verify independently.** The test suite (`npm test`, 36 tests) and the production build run on a separate Linux VM, not the laptop the code was written on. Each on-chain step is checked with a separate read (transaction code, `PQCHybridSignature` extension, `pqc_hybrid_verify` event, byte-for-byte key read-back). The quorum is recomputed by `scripts/quorum.mjs` from public data alone, including from a fresh clone.
 5. **Record evidence** (transaction hashes and heights) in the README as it happens.
 
 ## What the human did
@@ -57,6 +57,7 @@ These are kept here on purpose. They are the reason every claim is checked.
 | Git would have converted line endings in `advisories/*.json` on Windows checkouts, breaking their on-chain hashes | Git's own warning during a commit | `.gitattributes` marks `advisories/` as binary; stored bytes were checked against the anchored hashes |
 | The Operator tab stopped looking for QoreX after 6 seconds | The wallet-mock test injected it later and the page missed it | It keeps looking, and there is a "Check again" button |
 | A failed chain read made the page think no encryption key was registered, and offered to register a new one. Doing so would have locked the operator out of advisories sealed to the old key | Seen during the end-to-end test on a flaky connection | A failed read is now an error the page retries; the server no longer caches failures |
+| The production server answered a folder path such as `/assets/` with a 502 that included an internal error message | A smoke test of the built app on the test VM | Folders and unknown paths now get the app shell, errors carry no internal detail, and a test covers it |
 | The agent's own dev-server setup (Vite 5) served the test keys in `.keys/` to anyone who asked for the right URL | Dependabot alerts, then the agent confirmed it by status code and size, without printing the keys | Vite 6.4.4 with strict file rules; rechecked afterwards that key paths return 403 |
 
 ## Safety rules the agent followed

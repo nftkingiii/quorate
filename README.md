@@ -33,6 +33,8 @@ Work in progress. Done and checked so far:
 | Real validator sets | Roster tab, 19 November 2026 | 0 of 8 mainnet and 0 of 4 testnet validators have an encryption key; their signing keys are hybrid, without proof of possession |
 | QoreX operator flow | Operator tab driven by `@qorechain/qorex-wallet-mock` 0.1.0 | Connect, create a sealing key, register it through QoreX `signAndBroadcast` (shielded), be added in epoch 3, open QSA-003 locally, acknowledge through QoreX (shielded); `scripts/quorum.mjs` counts it: QSA-003 1/4 ready |
 | Backup safety | Operator tab | A wrong passphrase is refused; the right one restores the key, and it must match the key registered on chain |
+| Test suite | `npm test` (`test/*.test.mjs`) | 36/36 on Node 22: every quorum refusal rule, quorum thresholds, epoch rotation, failed account reads never reading as "no key", the sealing-key backup (wrong passphrase, tampering, relabelling), MsgSend bytes identical to `cosmjs-types`, and the server's guard rails (GET only, allow-listed files, no path escapes, security headers) |
+| Production build | `npm run build`, then `npm start` | Builds (277 KB JS, 93 KB gzipped); the server serves it, with folders and unknown paths falling back to the app |
 
 The QoreX flow was exercised with the official QoreX wallet mock, a test double that signs for real on testnet with the same hybrid scheme. It has not yet been run with the QoreX extension or app themselves.
 
@@ -54,6 +56,8 @@ Still to do: an operator acknowledgement from a real QoreX wallet, a public depl
 npm install
 npm run dev:server   # read-only server on :8787 (reads the chain, applies lib/quorum-core.mjs)
 npm run dev:web      # Vite on :5173, proxies /api and /advisories to the server
+npm test             # 36 tests, no network needed
+npm run build && npm start   # production: the read-only server serves web/dist on $PORT (default 8787)
 ```
 
 Coordinator actions (signed by the coordinator key in `.keys/`):
