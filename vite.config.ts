@@ -1,14 +1,30 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
 // The app lives in web/; the read-only server (server/index.mjs) answers /api
 // and /advisories. In development Vite proxies those to it.
+//
+// The project folder also holds testnet keys (.keys/), receipts and internal
+// notes. The dev server may only read web/ and node_modules/, refuses those
+// paths outright, listens on this machine only, and rejects cross-site
+// requests (Vite 6.4.4 or later; see the Dependabot alerts of 19 November 2026).
 export default defineConfig({
   root: "web",
   plugins: [react()],
   build: { outDir: "dist", emptyOutDir: true, target: "es2022" },
   server: {
+    host: "localhost",
     port: 5173,
+    strictPort: true,
+    cors: false,
+    fs: {
+      strict: true,
+      allow: [here("./web"), here("./node_modules")],
+      deny: [".env", ".env.*", "*.{crt,pem,key}", "**/.keys/**", "**/.git/**", "**/receipts/**", "**/PROJECT_STATE.md", "**/HACK_EVENT_GATE.json"],
+    },
     proxy: {
       "/api": "http://localhost:8787",
       "/advisories": "http://localhost:8787",
@@ -22,4 +38,5 @@ export default defineConfig({
       },
     },
   },
+  preview: { host: "localhost", cors: false },
 });
