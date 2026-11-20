@@ -7,11 +7,12 @@ export type Advisory = {
   ready: number; members: number; needed: number; quorate: boolean;
   roster: { address: string; ack: Ack }[];
 };
-export type Epoch = { epoch: number; members: string[]; anchor: string; height: number; envHash: string };
+export type Epoch = { epoch: number; members: string[]; sealers?: Record<string, string>; anchor: string; height: number; envHash: string };
 export type Rejected = { tx: string; height: number; from: string | null; kind: string; advisory?: string; reason: string };
 export type QuorumData = {
   coordinator: string; network: string; chainId: string; height: number; blockSeconds: number | null; readAt: string;
   epochs: Epoch[]; advisories: Advisory[]; rejected: Rejected[];
+  bindings: { operator: string; sealer: string; bindTx: string; sealerTx: string | null; mutual: boolean }[];
 };
 export type KeyState = { type: string | null; possessionProven: boolean } | null | "unknown";
 export type RosterRow = {
@@ -28,7 +29,7 @@ export type CurrentEpoch = {
 export type AccountData = {
   address: string; signingKey: KeyState;
   encryptionKey: { found: boolean; publicKeySha3: string | null } | "unknown";
-  balanceUqor: string | null; readAt: string;
+  balanceUqor: string | null; accountNumber: number | null; sequence: number | null; readAt: string;
 };
 
 export async function getJson<T>(url: string): Promise<T> {

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import type { QuorumData } from "./api";
 import { ago, fmt, useResource } from "./api";
 import { QuorumView } from "./QuorumView";
 import { AdvisoryView } from "./AdvisoryView";
 import { RosterView } from "./RosterView";
-import { OperatorView } from "./OperatorView";
+// The Operator tab carries the QoreChain SDK (signing for the sealing account); load it only when opened.
+const OperatorView = lazy(() => import("./OperatorView").then((m) => ({ default: m.OperatorView })));
 import { RefreshIcon } from "./ui";
 
 type Tab = "quorum" | "advisory" | "operator" | "roster";
@@ -59,7 +60,11 @@ export function App() {
       <main className="shell" id="panel" role="tabpanel">
         {tab === "quorum" && <QuorumView q={q.data} error={q.error} onRetry={q.reload} goRoster={() => go("roster")} />}
         {tab === "advisory" && <AdvisoryView q={q.data} />}
-        {tab === "operator" && <OperatorView q={q.data} reloadQuorum={q.reload} />}
+        {tab === "operator" && (
+          <Suspense fallback={<p className="muted" style={{ paddingTop: 48 }}>Loading the operator tools…</p>}>
+            <OperatorView q={q.data} reloadQuorum={q.reload} />
+          </Suspense>
+        )}
         {tab === "roster" && <RosterView />}
         <footer className="foot">
           <span>Quorate · built for Build Before Q-Day</span>

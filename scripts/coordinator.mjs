@@ -17,13 +17,14 @@ import { fetchMlkemPublicKey } from "@qorechain/qoreseal/network";
 import { EpochKeyManager, sealBatch } from "@qorechain/qoreseal";
 import { ADVISORY_CONTEXT, CHAIN_ID, EPOCH_PURPOSE, REST, getTx, latestHeight, memo, sha3 } from "../lib/protocol.mjs";
 import { decode } from "../lib/bech32.mjs";
+import { kemFound, readQuorum } from "../lib/quorum-core.mjs";
 
 const DIR = "advisories";
 const [cmd, ...rest] = process.argv.slice(2);
 const opts = { add: [], remove: [] };
 for (let i = 0; i < rest.length; i++) {
   const k = rest[i].replace(/^--/, "");
-  if (k === "simulated") { opts.simulated = true; continue; }
+  if (k === "simulated" || k === "refresh") { opts[k] = true; continue; }
   const v = rest[++i];
   if (k === "add" || k === "remove") opts[k].push(v); else opts[k] = v;
 }
@@ -54,7 +55,26 @@ async function anchor(text) {
 const history = JSON.parse(readFileSync(".keys/epochs.json", "utf8")).map((k) => ({ epoch: BigInt(k.epoch), key: Buffer.from(k.key, "base64") }));
 const current = Number(history.at(-1).epoch);
 const currentManifest = JSON.parse(readFileSync(`${DIR}/epoch-${current}.json`, "utf8"));
-const recipient = async (address) => ({ mlkemPublicKey: await fetchMlkemPublicKey({ rest: REST, address }) });
+
+// Where a member's encryption key lives: its own account, or the sealing account
+// it is bound to both ways on chain (QoreX will not let a website register an
+// encryption key, so wallet operators use a sealing account).
+const chainView = await readQuorum({
+  coordinator: native.address,
+  readFile: async (n) => (existsSync(`${DIR}/${n}`) ? new Uint8Array(readFileSync(`${DIR}/${n}`)) : null),
+});
+// Resolved from the chain every run: the latest two-way binding wins (an
+// operator who lost a backup rebinds to a new sealing account), then the
+// member's own key. The previous epoch file is never trusted for this.
+const sealers = {};
+async function keyAccountFor(address) {
+  const b = [...chainView.bindings].reverse().find((x) => x.operator === address);
+  if (b?.mutual && (await kemFound(b.sealer))) { sealers[address] = b.sealer; return b.sealer; }
+  delete sealers[address];
+  if (await kemFound(address)) return address;
+  throw new Error(`${address} has no ML-KEM-1024 key on chain, and no two-way binding to a sealing account that has one`);
+}
+const recipient = async (address) => ({ mlkemPublicKey: await fetchMlkemPublicKey({ rest: REST, address: await keyAccountFor(address) }) });
 const group = new EpochKeyManager({
   chainId: CHAIN_ID, purpose: EPOCH_PURPOSE, mode: "mlkem", history,
   members: Object.fromEntries(await Promise.all(currentManifest.members.map(async (a) => [a, await recipient(a)]))),
@@ -63,17 +83,19 @@ const saveKeys = () => writeFileSync(".keys/epochs.json", JSON.stringify(group.e
 
 if (cmd === "rotate") {
   for (const a of [...opts.add, ...opts.remove]) if (!isQor(a)) throw new Error(`not a qor1 account address: ${a}`);
-  if (!opts.add.length && !opts.remove.length) throw new Error("nothing to change: pass --add or --remove");
-  for (const a of opts.add) {
-    let r;
-    try { r = await recipient(a); } catch { throw new Error(`${a} has no ML-KEM-1024 key on chain yet`); }
-    group.addMember(a, r);
-  }
+  // A member whose key moved (rebound to a new sealing account) is re-added with its new key.
+  const moved = currentManifest.members.filter((m) => !opts.remove.includes(m) && (currentManifest.sealers?.[m] ?? m) !== (sealers[m] ?? m));
+  if (!opts.add.length && !opts.remove.length && !moved.length && !opts.refresh) throw new Error("nothing to change: pass --add, --remove or --refresh");
+  for (const m of moved) { console.log(`key moved for ${m}: now ${sealers[m] ?? m}`); group.addMember(m, await recipient(m)); }
+  for (const a of opts.add) group.addMember(a, await recipient(a));
+  if (!opts.add.length && !opts.remove.length && !moved.length) group.rotate();
   for (const a of opts.remove) group.removeMember(a);
   // Each change above started an epoch; publish only the final one, sealed to the final members.
   const epoch = Number(group.epoch);
   const members = group.members();
-  const bytes = Buffer.from(JSON.stringify({ protocol: "quorate/1", chainId: CHAIN_ID, epoch, members, envelope: b64(group.distribution()) }, null, 2) + "\n");
+  const used = Object.fromEntries(members.filter((m) => sealers[m]).map((m) => [m, sealers[m]]));
+  const manifest = { protocol: "quorate/1", chainId: CHAIN_ID, epoch, members, ...(Object.keys(used).length ? { sealers: used } : {}), envelope: b64(group.distribution()) };
+  const bytes = Buffer.from(JSON.stringify(manifest, null, 2) + "\n");
   if (existsSync(`${DIR}/epoch-${epoch}.json`)) throw new Error(`${DIR}/epoch-${epoch}.json already exists`);
   writeFileSync(`${DIR}/epoch-${epoch}.json`, bytes);
   saveKeys();

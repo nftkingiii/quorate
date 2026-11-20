@@ -39,6 +39,16 @@ export function registerSealingKey(sender: string, mlkemPublicKey: Uint8Array) {
   return send([buildRegisterKemKeyMessage({ sender, mlkemPublicKey })], undefined, 300000);
 }
 
+/** Funds the operator's sealing account so it can pay for its own two transactions. */
+export function fundSealer(from: string, sealer: string, uqor: number) {
+  return send([{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: encodeMsgSend(from, sealer, "uqor", String(uqor)) }], undefined, 200000);
+}
+
+/** The operator's half of the binding: "quorate/1 bind <sealer>", 1 uqor to the coordinator. */
+export function bindSealer(from: string, coordinator: string, sealer: string) {
+  return send([{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: encodeMsgSend(from, coordinator, "uqor", "1") }], `quorate/1 bind ${sealer}`, 250000);
+}
+
 /** An acknowledgement: 1 uqor to the coordinator, the record in the memo. */
 export function acknowledge(from: string, coordinator: string, memo: string) {
   return send([{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: encodeMsgSend(from, coordinator, "uqor", "1") }], memo, 250000);

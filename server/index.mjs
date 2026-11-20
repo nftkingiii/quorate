@@ -194,7 +194,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/account") {
       const address = url.searchParams.get("address") ?? "";
       if (!isQorAddress(address)) return send(res, 400, { error: "address must be a qor1 account address" });
-      return send(res, 200, await cached(`account:${address}`, 5000, () => account(address)));
+      return send(res, 200, await cached(`account:${address}`, 2000, () => account(address))); // short: the page reads its own changes back
     }
     if (url.pathname === "/api/tx") {
       const hash = (url.searchParams.get("hash") ?? "").toUpperCase();

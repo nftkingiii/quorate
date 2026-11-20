@@ -32,13 +32,31 @@ Work in progress. Done and checked so far:
 | Draft sealing | `scripts/check-draft-interop.mjs` | Sealed the way the Advisory tab seals, using the keys exactly as the server hands them to the browser: operators 1–3 open the draft, operator 4 cannot |
 | Real validator sets | Roster tab, 19 November 2026 | 0 of 8 mainnet and 0 of 4 testnet validators have an encryption key; their signing keys are hybrid, without proof of possession |
 | QoreX operator flow | Operator tab driven by `@qorechain/qorex-wallet-mock` 0.1.0 | Connect, create a sealing key, register it through QoreX `signAndBroadcast` (shielded), be added in epoch 3, open QSA-003 locally, acknowledge through QoreX (shielded); `scripts/quorum.mjs` counts it: QSA-003 1/4 ready |
-| Backup safety | Operator tab | A wrong passphrase is refused; the right one restores the key, and it must match the key registered on chain |
-| Test suite | `npm test` (`test/*.test.mjs`) | 36/36 on Node 22: every quorum refusal rule, quorum thresholds, epoch rotation, failed account reads never reading as "no key", the sealing-key backup (wrong passphrase, tampering, relabelling), MsgSend bytes identical to `cosmjs-types`, and the server's guard rails (GET only, allow-listed files, no path escapes, security headers) |
-| Production build | `npm run build`, then `npm start` | Builds (277 KB JS, 93 KB gzipped); the server serves it, with folders and unknown paths falling back to the app |
+| Real QoreX finding | Builder's own QoreX extension, 19 November 2026 | QoreX refuses `MsgRegisterKEMKey` from websites ("managed by the wallet itself"), although its integration guide and wallet mock only reserve the ML-DSA-87 key messages. Hence the sealing account below. A report for `qorechain/qorex-integrations` is drafted |
+| Sealing-account flow | Operator tab with a fresh QoreX-mock wallet that has no encryption key of its own | Connect, create a key, fund the sealing account through QoreX, register its signing key and publish its encryption key through the relay, bind both ways, open and acknowledge through QoreX; then lose the backup, rebind to a new sealing account, and the coordinator re-keys the next epoch (table below) |
+| Backup safety | Operator tab | A wrong passphrase is refused; the right one restores the key, and it must match the sealing account bound on chain |
+| Test suite | `npm test` (`test/*.test.mjs`) | 56/56 on Node 22 (testbench VM): every quorum refusal rule and threshold, epoch rotation, the two-way binding rules (one-sided, wrong pair, too late, rebinding), failed account reads never reading as "no key", the sealing-secret backup, MsgSend bytes identical to `cosmjs-types`, QoreX error messages, the relay's gate and rate limit, and the server's guard rails |
+| Production build | `npm run build`, then `npm start` | Builds; every visitor loads 334 KB, and the Operator tab (2.7 MB, mostly the QoreChain SDK) loads only when opened |
 
-The QoreX flow was exercised with the official QoreX wallet mock, a test double that signs for real on testnet with the same hybrid scheme. It has not yet been run with the QoreX extension or app themselves.
+The QoreX steps were exercised with the official QoreX wallet mock, a test double that signs for real on testnet with the same hybrid scheme. The real extension was tried once, which surfaced the `MsgRegisterKEMKey` refusal; the sealing-account flow avoids that message and has not yet been run end to end with the real extension.
 
 Still to do: an operator acknowledgement from a real QoreX wallet, a public deployment, and the demo video.
+
+### Sealing-account test (19 November 2026)
+
+Operator `qor1hhd5njxjwjp3hhmu675rjwqutehfwpyekqacay`, a QoreX-mock wallet with no encryption key of its own.
+
+| Step | Tx hash | Height |
+|---|---|---|
+| QoreX funds sealing account 1 `qor1p6z8yv0l2czjs7uf5lq74s4758a0vl6qzzkvcs` | `CD912BF89B7173CA1755086FDE76A0CB5FEFABC7D9AF739DDDE2387F7D0D1764` | 10388061 |
+| Sealing account 1 publishes its ML-KEM-1024 key and the `sealer` record (relay, hybrid) | `0CE754D8FB6630AFB0FD0B0F9D5716C3A07CC25BAC779AB169384218E988EBF2` | 10388083 |
+| QoreX sends the `bind` record | `8C9084A80E7920C109C06B64FF52BA28CCC6BCFF388BCFD27BC58E1D9882F4F7` | 10388095 |
+| Epoch 5 anchor (sealing account 1 named in the file) | `5EF45C7CC8EB86D0B16C95261E384EEB74FA90FAA5E28ECD4FB55240AA157E19` | 10388191 |
+| QSA-004 anchor (sealed to sealing account 1, whose backup was then lost in the test) | `DCBEA88C65D5CE375A23942F9C59CAB22EA1C4605E9A79F179BF3AA17AA5E3AE` | 10388208 |
+| Epoch 6 anchor (the coordinator detects the moved key; sealing account 2 `qor1jx4zhu5ng34lr682dyltt3f3vjk6g23rtva8qa` named) | `9A07B9F6BC52768DEC1A2DC3710D13891C494F7F6225C6670CF95888C61D6698` | 10409451 |
+| QSA-005 anchor | `E913CB9F28196FE5DDF3AACCDFA395C2BE13ACCEDF86DD71C32E2CAD3ECA05B1` | 10409470 |
+
+The sealing accounts' key registrations, the second funding and binding, and the QSA-005 acknowledgement (block 10,409,495) are listed by `scripts/quorum.mjs` and on each account's explorer page. The reader finds epochs 5 and 6 each valid for the binding in force when anchored, QSA-005 1/4 ready, QSA-004 0/4 (its key was lost), and no new refusals.
 
 ### QoreX wallet test (19 November 2026)
 
@@ -56,7 +74,7 @@ Still to do: an operator acknowledgement from a real QoreX wallet, a public depl
 npm install
 npm run dev:server   # read-only server on :8787 (reads the chain, applies lib/quorum-core.mjs)
 npm run dev:web      # Vite on :5173, proxies /api and /advisories to the server
-npm test             # 36 tests, no network needed
+npm test             # 56 tests, no network needed
 npm run build && npm start   # production: the read-only server serves web/dist on $PORT (default 8787)
 ```
 
@@ -64,16 +82,25 @@ Coordinator actions (signed by the coordinator key in `.keys/`):
 
 ```sh
 node scripts/coordinator.mjs rotate --add qor1...      # next epoch, sealed to the new member list
+node scripts/coordinator.mjs rotate                    # re-keys members whose sealing account moved (or --refresh)
 node scripts/coordinator.mjs advisory --id QSA-004 --title "..." --simulated
 ```
 
 The dev server also proxies `/qore-rest` to the testnet REST API. That exists only so the QoreX wallet mock, which runs inside the page, can reach the chain during tests; the real QoreX extension calls the chain itself, and the production server has no such route.
 
-QoreChain's public REST endpoints send no CORS headers, so the browser cannot read the chain directly. `server/index.mjs` does it instead. It answers only `GET`, serves only the files in `advisories/`, caches chain reads for 15–30 seconds, and holds no keys. Sealing happens in the browser with `@qorechain/qoreseal`; only ciphertext and hashes leave the page.
+QoreChain's public REST endpoints send no CORS headers, so the browser can neither read the chain nor broadcast to it directly. `server/index.mjs` does both for the page, and holds no keys. Reads are `GET` only, serve only the files in `advisories/`, and are cached for 2–30 seconds. Its one write route, `POST /api/relay`, forwards transactions already signed in the browser, and only two shapes (`lib/relay.mjs`): a sealing account's ML-DSA-87 key registration, and its ML-KEM-1024 key plus a 1 uqor `sealer` record to the coordinator. Each is at most 16 KB, with 10 per visitor per 10 minutes and 200 overall. The relay cannot create or change a transaction; the chain checks every signature. Sealing happens in the browser with `@qorechain/qoreseal`; only ciphertext and hashes leave the page.
 
 - **Quorum.** Each advisory as a ring of operator lamps, lit when an acknowledgement counts, with the threshold tick, the halt height and the blocks left (block time measured over the last 1,000 blocks). Refused records list why they do not count.
 - **Advisory.** Anchored ciphertext to download, and a draft composer that seals to the current epoch's ML-KEM-1024 keys as read from the chain. Anchoring stays with the coordinator script (`scripts/coordinator.mjs`); the button says so.
-- **Operator.** For a validator operator with QoreX, one step at a time: connect, create an ML-KEM-1024 sealing key in the browser and download a passphrase-encrypted backup (PBKDF2-SHA-256, 600,000 rounds, then AES-256-GCM, with the address and key hash bound in), register the key through QoreX, then open advisories sealed to you and acknowledge them through QoreX. QoreX adds the ML-DSA-87 layer; the page reports whether the committed transaction carries it. The sealing key lives in page memory only: never in local storage, never sent to the server.
+- **Operator.** For a validator operator with QoreX, one step at a time. QoreX will not let a website register an encryption key, so the page runs a small **sealing account** for the operator:
+  1. Connect QoreX.
+  2. Create one 32-byte secret in the browser; the sealing account, its ML-DSA-87 key and its ML-KEM-1024 key are all derived from it. Download a passphrase-encrypted backup (PBKDF2-SHA-256, 600,000 rounds, then AES-256-GCM, with the operator, network and key id bound in).
+  3. QoreX funds the sealing account with 0.3 test QOR.
+  4. The sealing account registers its ML-DSA-87 key, then publishes its ML-KEM-1024 key with its half of the binding. Both are signed in the browser and sent through the relay.
+  5. QoreX sends the operator's half of the binding.
+  6. Once the coordinator includes the operator, advisories open in the browser and are acknowledged through QoreX.
+
+  The secret lives in page memory only: never in local storage, never sent to the server. A lost backup can be replaced by binding a new sealing account; advisories sealed to the old key stay closed, and the page says so.
 - **Roster.** The demo set beside the real testnet and mainnet validator sets, with each operator's signing key and encryption key status.
 
 The interface had an [unslop](https://github.com/heydamir/unslop) pass (Damir Sokolovsky, CC BY 4.0).
@@ -86,7 +113,11 @@ Every record is a hybrid-signed QoreChain transaction (secp256k1 + ML-DSA-87). T
 quorate/1 epoch <n> members <count> env <sha3-256 of advisories/epoch-<n>.json>
 quorate/1 adv <id> epoch <n> height <target height> blob <sha3-256 of advisories/<id>.blob>
 quorate/1 ack <id> epoch <n> blob <sha3-256 of the advisory blob>
+quorate/1 bind <sealing account>        from the operator: "my encryption key lives on this account"
+quorate/1 sealer <operator account>     from the sealing account: "I hold the key for this operator"
 ```
+
+A binding counts when both halves are on chain, hybrid-signed and sent to the coordinator, and only for epochs anchored after it. An epoch file names, under `sealers`, the members reached through a sealing account. Epoch numbers can skip when one coordinator run makes several membership changes; only the final epoch is published.
 
 1. **Epoch.** The coordinator reads each member's ML-KEM-1024 key from the chain, seals a fresh epoch key to them (QoreSeal `EpochKeyManager`), publishes `advisories/epoch-<n>.json` (the member list and the sealed key), and anchors its hash on chain.
 2. **Advisory.** The advisory is encrypted under the epoch key (QoreSeal `sealBatch`), published as `advisories/<id>.blob`, and anchored with its hash and the target upgrade height.
