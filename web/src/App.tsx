@@ -7,6 +7,7 @@ import { RosterView } from "./RosterView";
 // The Operator tab carries the QoreChain SDK (signing for the sealing account); load it only when opened.
 const OperatorView = lazy(() => import("./OperatorView").then((m) => ({ default: m.OperatorView })));
 import { RefreshIcon } from "./ui";
+import { WalletButton } from "./WalletButton";
 
 type Tab = "quorum" | "advisory" | "operator" | "roster";
 const TABS: { id: Tab; label: string }[] = [
@@ -54,6 +55,7 @@ export function App() {
               </span>
             )}
             <button className="iconbtn" onClick={q.reload} disabled={q.loading} aria-label="Read the chain again"><RefreshIcon spinning={q.loading} /></button>
+            <WalletButton goOperator={() => go("operator")} />
           </div>
         </div>
       </div>

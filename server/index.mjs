@@ -34,6 +34,7 @@ const ROLES = {
   qor1aq8tx4y2jke8snqgu6ajdav23nyyw7cznt9c4q: "Operator 3",
   qor17p9ekrjnwcd5qmwjhz4g5dc38w6f9dx9f2anxt: "Operator 4",
   qor1d29r40km6savysgcqm4zy6308ya2kljd8dcazm: "QoreX mock (test wallet)",
+  qor1hhd5njxjwjp3hhmu675rjwqutehfwpyekqacay: "QoreX mock 2 (test wallet)",
 };
 const SIMULATED = new Set(Object.keys(ROLES).filter((a) => ROLES[a].startsWith("Operator")));
 const ADVISORY_FILE = /^(epoch-\d{1,6}\.json|[A-Za-z0-9-]{1,32}\.blob)$/;
@@ -78,12 +79,19 @@ async function roster(set) {
     const q = await cached("quorum", 15000, quorum);
     const all = [...new Set(q.epochs.flatMap((e) => e.members))];
     const latest = q.epochs.at(-1);
-    const rows = await Promise.all(all.map(async (address) => ({
-      address, name: ROLES[address] ?? "QoreX operator", simulated: SIMULATED.has(address),
-      epochs: q.epochs.filter((e) => e.members.includes(address)).map((e) => e.epoch),
-      inCurrentEpoch: latest?.members.includes(address) ?? false,
-      ...(await keyStatus(NETWORKS.testnet.rest, address)),
-    })));
+    const rows = await Promise.all(all.map(async (address) => {
+      const own = await keyStatus(NETWORKS.testnet.rest, address);
+      // An operator bound both ways to a sealing account receives through that account's key.
+      const b = [...q.bindings].reverse().find((x) => x.operator === address && x.mutual);
+      const viaSealer = b ? (await keyStatus(NETWORKS.testnet.rest, b.sealer)).encryptionKey : null;
+      return {
+        address, name: ROLES[address] ?? "QoreX operator", simulated: SIMULATED.has(address),
+        epochs: q.epochs.filter((e) => e.members.includes(address)).map((e) => e.epoch),
+        inCurrentEpoch: latest?.members.includes(address) ?? false,
+        ...own,
+        ...(b && viaSealer === true ? { encryptionKey: true, sealer: b.sealer } : {}),
+      };
+    }));
     return { set, network: "testnet", chainId: NETWORKS.testnet.chainId, currentEpoch: latest?.epoch ?? null, rows, readAt: new Date().toISOString() };
   }
   const net = NETWORKS[set];

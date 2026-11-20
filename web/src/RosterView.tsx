@@ -42,7 +42,7 @@ const signingTag = (r: RosterRow) => {
 };
 const encTag = (r: RosterRow) =>
   r.encryptionKey === "unknown" ? <Tag tone="neutral">Could not read</Tag>
-  : r.encryptionKey ? <Tag tone="ok">Registered</Tag> : <Tag tone="neutral">Not registered</Tag>;
+  : r.encryptionKey ? <Tag tone="ok">{r.sealer ? "Registered, on its sealing account" : "Registered"}</Tag> : <Tag tone="neutral">Not registered</Tag>;
 
 function RosterTable({ set }: { set: SetName }) {
   const { data, error, loading, reload } = useResource<RosterData>(`/api/roster?set=${set}`);

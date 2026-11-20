@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { explorerTx, restTx, short } from "./api";
 
@@ -11,6 +12,45 @@ export function TxLinks({ hash, label = "Transaction" }: { hash: string; label?:
         Explorer
       </a>
     </span>
+  );
+}
+
+/** Copies text to the clipboard and says so for two seconds. */
+export function CopyButton({ text, label = "Copy", small = false }: { text: string; label?: string; small?: boolean }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setState("copied");
+    } catch {
+      // Older path for browsers or embedded views that block the async clipboard.
+      const ta = Object.assign(document.createElement("textarea"), { value: text });
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      setState(ok ? "copied" : "failed"); // failed: the text is on screen to select by hand
+    }
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setState("idle"), 2000);
+  };
+  return (
+    <button type="button" className={`btn${small ? " small" : ""}`} onClick={copy} aria-live="polite">
+      <CopyIcon /> {state === "copied" ? "Copied" : state === "failed" ? "Select and copy" : label}
+    </button>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10.5 3.5v-.5A1.5 1.5 0 0 0 9 1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 

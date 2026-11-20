@@ -38,9 +38,25 @@ Work in progress. Done and checked so far:
 | Test suite | `npm test` (`test/*.test.mjs`) | 56/56 on Node 22 (testbench VM): every quorum refusal rule and threshold, epoch rotation, the two-way binding rules (one-sided, wrong pair, too late, rebinding), failed account reads never reading as "no key", the sealing-secret backup, MsgSend bytes identical to `cosmjs-types`, QoreX error messages, the relay's gate and rate limit, and the server's guard rails |
 | Production build | `npm run build`, then `npm start` | Builds; every visitor loads 334 KB, and the Operator tab (2.7 MB, mostly the QoreChain SDK) loads only when opened |
 
-The QoreX steps were exercised with the official QoreX wallet mock, a test double that signs for real on testnet with the same hybrid scheme. The real extension was tried once, which surfaced the `MsgRegisterKEMKey` refusal; the sealing-account flow avoids that message and has not yet been run end to end with the real extension.
+The QoreX steps were first exercised with the official QoreX wallet mock, a test double that signs for real on testnet with the same hybrid scheme. The real extension then surfaced the `MsgRegisterKEMKey` refusal, and the sealing-account flow was run end to end with the real QoreX extension (table below).
 
-Still to do: an operator acknowledgement from a real QoreX wallet, a public deployment, and the demo video.
+Still to do: a public deployment and the demo video.
+
+### Real QoreX wallet (19 November 2026)
+
+The builder's own QoreX extension on testnet. Operator `qor12cjvg5ruayj4npett85pl82x567rj8c8fyj9nk`, sealing account `qor1tgs8d025kp5s3k9xhph5fhpp7qfvawepx4jrf9`.
+
+| Step | Signed by | Tx hash | Height |
+|---|---|---|---|
+| Fund the sealing account | QoreX | `2CAC6CF7851BE77E276FE4EFEC8F102B2F32C3EEC742C937B4A68605499EDF27` | 10410410 |
+| Register the sealing account's ML-DSA-87 key (proof of possession) | browser, via relay | `7ABAA534D11D3D68FEF702BA35AFE6B4801ACEF7818FF5095821A4FAB3AE3E2F` | 10410415 |
+| Publish its ML-KEM-1024 key and the `sealer` record | browser, via relay | `1BFE194156182A91E2AAB8BFDE1E5E1545625D7D30A8F365CB71E4535C354F80` | 10410422 |
+| `bind` record | QoreX | `2E4C1EFC84F9323F46939FC6E9BDF2C912111FE0AE26862B68506DD1D332EFAD` | 10410436 |
+| Epoch 8 anchor (operators 1–3 and this wallet, through its sealing account) | coordinator | `FC46E8DA119327B4C036F44BEE83FCEF6B0AA3B3FD0BFD75001A2AE946D464A0` | 10410582 |
+| QSA-006 anchor | coordinator | `E77596EE631E83B90B4FE8E8ADAB0F3451565B6F01AA0C9E388619C1EEB104BF` | 10410611 |
+| Open QSA-006 in the browser, then acknowledge | QoreX | `75AD491314EC7D0343B9966F99971665F7016385842CF6A38E5F4AE5BFFF2F8D` | 10410781 |
+
+All code 0. `scripts/quorum.mjs` counts the acknowledgement (hybrid-signed, from a member of epoch 8, matching the anchored ciphertext): QSA-006 1/4 ready.
 
 ### Sealing-account test (19 November 2026)
 

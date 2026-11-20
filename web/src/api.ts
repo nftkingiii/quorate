@@ -19,6 +19,8 @@ export type RosterRow = {
   address: string; name: string; simulated: boolean; votingPowerBps?: number;
   epochs?: number[]; inCurrentEpoch?: boolean;
   signingKey: KeyState; encryptionKey: boolean | "unknown";
+  /** Set when the key is on a sealing account bound both ways to this operator. */
+  sealer?: string;
 };
 export type RosterData = { set: string; network: string; chainId: string; currentEpoch?: number | null; rows: RosterRow[]; readAt: string };
 export type CurrentEpoch = {
@@ -70,6 +72,7 @@ export const ROLES: Record<string, string> = {
 /** The official QoreX wallet mock used for the end-to-end test: a test double, not a person's wallet. */
 export const TEST_WALLETS: Record<string, string> = {
   qor1d29r40km6savysgcqm4zy6308ya2kljd8dcazm: "QoreX mock (test wallet)",
+  qor1hhd5njxjwjp3hhmu675rjwqutehfwpyekqacay: "QoreX mock 2 (test wallet)",
 };
 export const nameOf = (a: string) => ROLES[a] ?? TEST_WALLETS[a] ?? "QoreX operator";
 export const short = (s: string, a = 10, b = 6) => (s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s);

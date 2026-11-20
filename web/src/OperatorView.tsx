@@ -3,7 +3,9 @@ import { openBatch, openEpochKey } from "@qorechain/qoreseal";
 import { sha3_256 } from "@noble/hashes/sha3.js";
 import type { AccountData, Advisory, QuorumData } from "./api";
 import { fmt, getJson, short } from "./api";
-import { CHAIN_ID, acknowledge, bindSealer, connect, explain, fundSealer, isMock, qorex } from "./wallet";
+import { CHAIN_ID, acknowledge, bindSealer, explain, fundSealer } from "./wallet";
+import { useWallet } from "./WalletContext";
+import { CopyButton } from "./ui";
 import { MIN_PASSPHRASE, createSecret, downloadJson, exportBackup, fromBase64, importBackup, keyFingerprint, toHex } from "./sealkey";
 import type { Sealer } from "./sealer";
 import { SEALER_FEES_UQOR, SEALER_FUNDING_UQOR, buildKeyAndBinding, buildKeyRegistration, deriveSealer, relay } from "./sealer";
@@ -22,23 +24,14 @@ type Done = { what: string; txHash: string; height?: number; shield?: string };
  *   → QoreX sends the operator's half → coordinator adds you → open + acknowledge.
  */
 export function OperatorView({ q, reloadQuorum }: { q: QuorumData | null; reloadQuorum: () => void }) {
-  const [address, setAddress] = useState<string | null>(null);
-  const [sealer, setSealer] = useState<Sealer | null>(null);
+  // The connection and the sealing key live app-wide (WalletContext), so switching tabs keeps them.
+  const { hasWallet, mock, address, connect, connectedAt, sealer, setSealer } = useWallet();
   const [sealerAcct, setSealerAcct] = useState<AccountData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<Done | null>(null);
   const [replacing, setReplacing] = useState(false); // the operator lost the bound key's backup and makes a new one
-  const [connectedAt, setConnectedAt] = useState<number>(0); // choose "create" or "load" only from a chain read made after connecting
   const [bindSentFor, setBindSentFor] = useState<string | null>(null); // the chain view is cached for 15 s; do not offer the bind twice
-  const [hasWallet, setHasWallet] = useState(() => !!qorex());
-
-  // QoreX can inject itself after the page loads; keep looking until it does.
-  useEffect(() => {
-    if (hasWallet) return;
-    const t = setInterval(() => { if (qorex()) setHasWallet(true); }, 1000);
-    return () => clearInterval(t);
-  }, [hasWallet]);
 
   // Keeps the last good reading when the chain cannot be read; retries a few times.
   const readAccount = useCallback(async (a: string) => {
@@ -77,7 +70,9 @@ export function OperatorView({ q, reloadQuorum }: { q: QuorumData | null; reload
   const balance = Number(sealerAcct?.balanceUqor ?? 0);
   const boundHere = !!(sealer && myBinding?.sealer === sealer.address);
 
-  const freshView = !!q && Date.parse(q.readAt) >= connectedAt;
+  // Decide "create" or "load" only from a chain view at most a minute older than the connection,
+  // so a page left open from before a binding cannot offer a second key.
+  const freshView = !!q && Date.parse(q.readAt) >= connectedAt - 60_000;
   const step = !hasWallet ? "install" : !address ? "connect" : !q || (!sealer && !freshView) ? "loading"
     : !sealer ? (myBinding && !replacing ? "import" : "create")
     : myBinding && !boundHere && kemPublished && !replacing ? "mismatch"
@@ -106,7 +101,7 @@ export function OperatorView({ q, reloadQuorum }: { q: QuorumData | null; reload
         </p>
       </header>
 
-      {isMock() && (
+      {mock && (
         <div className="note" style={{ marginBottom: 16 }}><span><strong>Test wallet</strong> · This page is driven by the official QoreX wallet mock, a test double that signs for real on testnet</span></div>
       )}
 
@@ -136,14 +131,13 @@ export function OperatorView({ q, reloadQuorum }: { q: QuorumData | null; reload
           {step === "install" && (
             <Panel title="QoreX was not found">
               <p className="muted">Install the QoreX browser extension and switch it to Testnet. On a phone, open this page in the QoreX app's browser. This page notices QoreX as soon as it appears.</p>
-              <button className="btn" onClick={() => setHasWallet(!!qorex())}>Check again</button>
             </Panel>
           )}
 
           {step === "connect" && (
             <Panel title="Connect your QoreX account">
               <p className="muted">QoreX asks you to connect this site. The page learns your qor1 address and nothing else. If QoreX is locked, unlock it from your browser's toolbar first.</p>
-              <button className="btn primary" disabled={!!busy} onClick={() => run("connect", async () => { const a = await connect(); setConnectedAt(Date.now() - 1000); setAddress(a.address); reloadQuorum(); })}>
+              <button className="btn primary" disabled={!!busy} onClick={() => run("connect", async () => { await connect(); reloadQuorum(); })}>
                 {busy ? "Waiting for QoreX…" : "Connect QoreX"}
               </button>
             </Panel>
@@ -228,7 +222,7 @@ export function OperatorView({ q, reloadQuorum }: { q: QuorumData | null; reload
           {step === "waiting" && address && (
             <Panel title="Waiting for the coordinator">
               <p className="muted">Your key is on chain and bound. The coordinator adds you when it starts the next epoch; advisories sealed from then on open here. Send the coordinator this address:</p>
-              <pre className="code">{address}</pre>
+              <AddressToCopy address={address} />
               <AutoRefresh every={20000} onTick={reloadQuorum} />
               <button className="btn" onClick={reloadQuorum}>Check now</button>
             </Panel>
@@ -237,7 +231,7 @@ export function OperatorView({ q, reloadQuorum }: { q: QuorumData | null; reload
           {step === "rekeyed" && address && (
             <Panel title="Waiting for the coordinator to use your new key">
               <p className="muted">You are in epoch {myEpochs.join(", ")}, but it was sealed to your previous sealing key. Advisories sealed from the coordinator's next epoch will open with this one. Tell the coordinator you rebound:</p>
-              <pre className="code">{address}</pre>
+              <AddressToCopy address={address} />
               <AutoRefresh every={20000} onTick={reloadQuorum} />
               <button className="btn" onClick={reloadQuorum}>Check now</button>
             </Panel>
@@ -263,6 +257,15 @@ export function OperatorView({ q, reloadQuorum }: { q: QuorumData | null; reload
         </section>
       </div>
     </>
+  );
+}
+
+function AddressToCopy({ address }: { address: string }) {
+  return (
+    <div className="copyrow">
+      <code className="code" style={{ flex: 1 }}>{address}</code>
+      <CopyButton text={address} label="Copy address" />
+    </div>
   );
 }
 
