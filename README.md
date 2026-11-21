@@ -1,5 +1,7 @@
 # Quorate
 
+[![Built on QoreChain](https://build.qorechain.io/badge/quorate.svg)](https://build.qorechain.io/p/quorate)
+
 Embargoed security patches that only the current QoreChain validator set can open, and a post-quantum signed quorum confirming they are ready.
 
 Built for Build Before Q-Day, the QoreChain Developer Fest, in the Encrypted Apps category.
