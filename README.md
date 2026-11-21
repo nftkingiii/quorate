@@ -6,7 +6,7 @@ Built for Build Before Q-Day, the QoreChain Developer Fest, in the Encrypted App
 
 ## The problem
 
-QoreChain upgrades by coordinated halt. Governance sets a height, every validator swaps the binary, and the chain restarts. Mainnet has done this five times since 14 October 2026, and several of those releases were security batches. Before such a fix is public, the foundation has to get it to the validators privately, and it needs to know they are ready before the height.
+QoreChain upgrades by coordinated halt. Governance sets a height, every validator swaps the binary, and the chain restarts. Mainnet did this six times between 16 October and 12 November 2026 (v3.2.2 to v3.2.7, governance proposals 7, 11, 13, 14, 15 and 16), and v3.2.2, v3.2.3 and v3.2.5 carried security fixes. Before such a fix is public, the foundation has to get it to the validators privately, and it needs to know they are ready before the height.
 
 ## What Quorate does
 
