@@ -4,6 +4,8 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { get } from "node:http";
 
 const PORT = 18000 + Math.floor(Math.random() * 1000);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -69,6 +71,26 @@ test("folders and unknown paths get the app shell, never an error with internal 
     const body = await res.text();
     assert.ok(!/EISDIR|ENOENT|node:internal|\/home\/|C:\\\\/.test(body), `${p} leaked an internal detail`);
   }
+});
+
+test("built scripts are gzipped when asked, cached by hash, and identical once decoded", async (t) => {
+  const shell = await fetch(`${BASE}/`);
+  if (shell.status === 503) return t.skip("app not built");
+  assert.equal(shell.headers.get("cache-control"), "no-cache");
+  const src = (await shell.text()).match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
+  assert.ok(src, "index.html names a script under /assets/");
+  const raw = readFileSync(fileURLToPath(new URL(`../web/dist${src}`, import.meta.url)));
+  const zipped = await fetch(`${BASE}${src}`, { headers: { "accept-encoding": "gzip" } });
+  assert.equal(zipped.headers.get("content-encoding"), "gzip");
+  assert.equal(zipped.headers.get("vary"), "Accept-Encoding");
+  assert.match(zipped.headers.get("cache-control") ?? "", /immutable/);
+  assert.ok(Buffer.from(await zipped.arrayBuffer()).equals(raw), "decoded body matches the built file");
+  // A client that does not ask for gzip gets the plain bytes.
+  const plain = await new Promise((resolve, reject) => get(`${BASE}${src}`, (res) => {
+    const chunks = []; res.on("data", (c) => chunks.push(c)); res.on("end", () => resolve({ res, body: Buffer.concat(chunks) }));
+  }).on("error", reject));
+  assert.equal(plain.res.headers["content-encoding"], undefined);
+  assert.ok(plain.body.equals(raw));
 });
 
 test("bad parameters are refused before touching the chain", async () => {

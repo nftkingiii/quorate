@@ -12,6 +12,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import { extname, join, normalize, sep } from "node:path";
+import { gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_COORDINATOR, readQuorum } from "../lib/quorum-core.mjs";
 import { chainClock } from "../lib/protocol.mjs";
@@ -186,6 +187,30 @@ function send(res, status, body, type = "application/json") {
   res.end(typeof body === "string" || body instanceof Uint8Array ? body : JSON.stringify(body));
 }
 
+// Built files never change while the server runs, so each one is read and gzipped once.
+// Vite puts a content hash in every name under assets/, so those can be cached for a year.
+const COMPRESSIBLE = new Set([".html", ".js", ".css", ".svg", ".json"]);
+const staticCache = new Map();
+async function sendStatic(req, res, file) {
+  let entry = staticCache.get(file);
+  if (!entry) {
+    const raw = await readFile(file);
+    entry = { raw, gz: COMPRESSIBLE.has(extname(file)) && raw.length > 1024 ? gzipSync(raw, { level: 9 }) : null };
+    staticCache.set(file, entry);
+  }
+  const hashed = file.startsWith(join(DIST, "assets") + sep);
+  const gzip = entry.gz && /\bgzip\b/.test(String(req.headers["accept-encoding"] ?? ""));
+  res.writeHead(200, {
+    "Content-Type": TYPES[extname(file)] ?? "application/octet-stream",
+    ...SECURITY_HEADERS,
+    "Cache-Control": hashed ? "public, max-age=31536000, immutable" : "no-cache",
+    ...(entry.gz ? { Vary: "Accept-Encoding" } : {}),
+    ...(gzip ? { "Content-Encoding": "gzip" } : {}),
+    "Content-Length": (gzip ? entry.gz : entry.raw).length,
+  });
+  res.end(gzip ? entry.gz : entry.raw);
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   // One write route: /api/relay forwards a sealing account's signed transaction (lib/relay.mjs).
@@ -225,7 +250,7 @@ const server = createServer(async (req, res) => {
     // Anything that is not a real file inside the build (folders, missing paths, escapes) gets the app shell.
     if (!file.startsWith(DIST + sep) || !isFile(file)) file = join(DIST, "index.html");
     if (!existsSync(file)) return send(res, 503, "The app is not built yet: run npm run build.", "text/plain; charset=utf-8");
-    return send(res, 200, await readFile(file), TYPES[extname(file)] ?? "application/octet-stream");
+    return sendStatic(req, res, file);
   } catch (err) {
     console.error(url.pathname, err.message);
     // Internal details stay in the log; the page gets a plain message.

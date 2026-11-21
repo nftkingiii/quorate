@@ -32,6 +32,7 @@ The work ran as one long conversation in which the agent could read the web, run
 - **Made the design calls.** The human rejected the AI's default warm-cream and serif look ("get creative with the colors"), asked for the unslop pass, and picked the "Night shift" palette from three directions the AI drafted.
 - **Chose the wallet architecture.** The human asked which option was less work, better engineered and more secure, then chose to have the operator's wallet join the set while the coordinator stays scripted, to keep the server read-only. When the real QoreX wallet refused to register an encryption key, the human tested it, reported the error and approved a narrow relay as the one exception.
 - **Asked for the security fix** after GitHub raised Dependabot alerts on development tooling.
+- **Approved the demo video** script and shot list before it was built, recorded the real-wallet scene, and uploaded the film.
 - **Did the things only a person can do:** registered for the fest, claimed test tokens from the faucet (sign-in required), created the fest project page, and approved every push to GitHub.
 
 ## What the AI generated
@@ -43,6 +44,7 @@ The work ran as one long conversation in which the agent could read the web, run
 | Read-only server | `server/index.mjs` (GET only, allow-listed files, TTL cache, no keys) |
 | Web app | `web/src/*`: the Quorum, Advisory, Operator and Roster tabs, QoreX wallet calls, sealing-key backup (PBKDF2-SHA-256 600,000 rounds, then AES-256-GCM), styles |
 | Writing | `README.md`, this file, the commit messages, and the text for the fest project form |
+| Demo video | The script, the shot list and every scene, rendered frame by frame from code over screenshots of the live site. The narration is a synthetic voice (Kokoro, run offline). The wallet scene is the builder's own screen recording, with 5 s of unlocking QoreX cut, which the film says on screen |
 | On-chain activity | 31 testnet transactions, all code 0, counted from the chain on 19 November 2026: 28 signed by the project's scripts and 3 by the test wallet through the QoreX wallet mock |
 
 The agent did not write any QoreChain cryptography. Encryption, epoch keys and hybrid signing all come from the official kits; Quorate decides who receives what and what counts.
@@ -62,14 +64,14 @@ These are kept here on purpose. They are the reason every claim is checked.
 | Right after connecting, the page chose between "create a key" and "load your key" from a chain view cached before the operator's binding existed, and offered a new key to an operator who already had one | The end-to-end test with the QoreX mock | The page waits for a chain read made after connecting |
 | The coordinator script would have resolved a rebound operator through the previous epoch file and sealed again to the lost key | Reading the script before running it after a rebind | Keys are resolved from the chain's latest two-way binding on every run |
 | The production server answered a folder path such as `/assets/` with a 502 that included an internal error message | A smoke test of the built app on the test VM | Folders and unknown paths now get the app shell, errors carry no internal detail, and a test covers it |
-| The agent's own dev-server setup (Vite 5) served the test keys in `.keys/` to anyone who asked for the right URL | Dependabot alerts, then the agent confirmed it by status code and size, without printing the keys | Vite 6.4.4 with strict file rules; rechecked afterwards that key paths return 403 |
+| The agent's own dev-server setup (Vite 5) served the test keys in `.keys/` to anyone who asked for the right URL | Dependabot alerts, then the agent confirmed it by status code and size, without printing the keys | Vite 6.4.4 with strict file rules; rechecked afterwards that key paths return 403. A later advisory (a query-string bypass of the same rule) was fixed by moving to Vite 6.4.6 |
 
 ## Safety rules the agent followed
 
 - **No secrets in the repository or the conversation.** Keys live in `.keys/`, which git ignores, and every commit was scanned before pushing. The agent never asked for, or printed, a private key or recovery phrase.
 - **No action on someone's behalf without a yes.** Pushes, wallet use and anything sent to an outside service waited for the human. The agent did not swap tokens or handle real funds; everything ran on testnet with valueless tokens.
-- **Honest labels.** The four operator accounts the project runs are marked "simulated" everywhere. The wallet test used the official QoreX mock and is labelled "QoreX mock (test wallet)"; the README says plainly that a real QoreX wallet has not been tried yet. All advisories are marked `simulated: true` and describe no real vulnerability.
+- **Honest labels.** The four operator accounts the project runs are marked "simulated" everywhere. The first wallet test used the official QoreX mock and is labelled "QoreX mock (test wallet)"; the README keeps that test separate from the later run with the real QoreX extension. All advisories are marked `simulated: true` and describe no real vulnerability.
 
 ## What remains human work
 
-Judgement about whether QoreChain's validators would use this, conversations with operators, and the demo video's narration are the human's. The AI can draft, but it cannot validate demand.
+Judgement about whether QoreChain's validators would use this, and conversations with operators, are the human's. The AI can draft, but it cannot validate demand.

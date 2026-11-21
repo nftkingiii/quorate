@@ -4,6 +4,9 @@ Embargoed security patches that only the current QoreChain validator set can ope
 
 Built for Build Before Q-Day, the QoreChain Developer Fest, in the Encrypted Apps category.
 
+- Demo video (2:12): https://youtu.be/APWbCBj5VOo
+- Live app: https://quorate.up.railway.app
+
 ## The problem
 
 QoreChain upgrades by coordinated halt. Governance sets a height, every validator swaps the binary, and the chain restarts. Mainnet did this six times between 16 October and 12 November 2026 (v3.2.2 to v3.2.7, governance proposals 7, 11, 13, 14, 15 and 16), and v3.2.2, v3.2.3 and v3.2.5 carried security fixes. Before such a fix is public, the foundation has to get it to the validators privately, and it needs to know they are ready before the height.
@@ -225,7 +228,7 @@ Built on the QoreChain kits, used under Apache-2.0:
 - [`@qorechain/sdk`](https://www.npmjs.com/package/@qorechain/sdk) 0.14.0: accounts, hybrid signing, PQC and KEM key registration
 - [`@qorechain/qoreseal`](https://github.com/qorechain/qoreseal) 0.1.0: ML-KEM-1024 envelopes and epoch keys
 
-Also: [`@qorechain/qorex-types`](https://github.com/qorechain/qorex-integrations) 0.1.0 for QoreX detection and `signAndBroadcast`, `@qorechain/qorex-wallet-mock` 0.1.0 for the wallet test, React and Vite for the app, [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) for SHA3-256 in the browser, IBM Plex Sans and Plex Mono (SIL Open Font License), and the [unslop](https://github.com/heydamir/unslop) design checklist by Damir Sokolovsky (CC BY 4.0).
+Also: [`@qorechain/qorex-types`](https://github.com/qorechain/qorex-integrations) 0.1.0 for QoreX detection and `signAndBroadcast`, `@qorechain/qorex-wallet-mock` 0.1.0 for the wallet test, React and Vite for the app, [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) for SHA3-256 in the browser, IBM Plex Sans and Plex Mono (SIL Open Font License), and the [unslop](https://github.com/heydamir/unslop) design checklist by Damir Sokolovsky (CC BY 4.0). The demo video's narration is synthesised with [Kokoro](https://github.com/hexgrad/kokoro) (Apache-2.0), and the film was rendered with Playwright and FFmpeg.
 
 QoreSeal's README says its construction is pending external review before 1.0. Quorate inherits that limitation.
 
