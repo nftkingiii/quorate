@@ -20,7 +20,7 @@ QoreChain upgrades by coordinated halt. Governance sets a height, every validato
 
 ## Status
 
-Work in progress. Done and checked so far:
+Built, deployed and checked. Each claim below names the script, transaction or test behind it.
 
 | What | Where | Result |
 |---|---|---|
@@ -31,19 +31,21 @@ Work in progress. Done and checked so far:
 | Advisory scenario on testnet | `scripts/advisory-flow.mjs` | 14 hybrid-signed transactions: 2 epochs, 2 advisories, 8 acknowledgements (2 of them deliberately invalid) |
 | Independent quorum check | `scripts/quorum.mjs` | Reads only the chain and `advisories/`, holds no keys. QSA-001 is 3/4 ready (quorate); QSA-002 is 3/3 ready (quorate). Two acknowledgements are rejected, for the right reasons |
 | Tamper check | `scripts/quorum.mjs` on an edited copy | Adding operator-4 back into `epoch-2.json` breaks the anchor hash, so epoch 2, QSA-002 and its acknowledgements are all refused |
-| Web app (local) | `web/`, `server/index.mjs` | Quorum, Advisory and Roster tabs read testnet and mainnet live through a read-only server that holds no keys |
+| Web app | `web/`, `server/index.mjs`, live at https://quorate.up.railway.app | Quorum, Advisory, Operator and Roster tabs read testnet and mainnet live through a server that holds no keys |
 | Draft sealing | `scripts/check-draft-interop.mjs` | Sealed the way the Advisory tab seals, using the keys exactly as the server hands them to the browser: operators 1–3 open the draft, operator 4 cannot |
 | Real validator sets | Roster tab, 19 November 2026 | 0 of 8 mainnet and 0 of 4 testnet validators have an encryption key; their signing keys are hybrid, without proof of possession |
 | QoreX operator flow | Operator tab driven by `@qorechain/qorex-wallet-mock` 0.1.0 | Connect, create a sealing key, register it through QoreX `signAndBroadcast` (shielded), be added in epoch 3, open QSA-003 locally, acknowledge through QoreX (shielded); `scripts/quorum.mjs` counts it: QSA-003 1/4 ready |
 | Real QoreX finding | Builder's own QoreX extension, 19 November 2026 | QoreX refuses `MsgRegisterKEMKey` from websites ("managed by the wallet itself"), although its integration guide and wallet mock only reserve the ML-DSA-87 key messages. Hence the sealing account below. A report for `qorechain/qorex-integrations` is drafted |
 | Sealing-account flow | Operator tab with a fresh QoreX-mock wallet that has no encryption key of its own | Connect, create a key, fund the sealing account through QoreX, register its signing key and publish its encryption key through the relay, bind both ways, open and acknowledge through QoreX; then lose the backup, rebind to a new sealing account, and the coordinator re-keys the next epoch (table below) |
 | Backup safety | Operator tab | A wrong passphrase is refused; the right one restores the key, and it must match the sealing account bound on chain |
-| Test suite | `npm test` (`test/*.test.mjs`) | 56/56 on Node 22 (testbench VM): every quorum refusal rule and threshold, epoch rotation, the two-way binding rules (one-sided, wrong pair, too late, rebinding), failed account reads never reading as "no key", the sealing-secret backup, MsgSend bytes identical to `cosmjs-types`, QoreX error messages, the relay's gate and rate limit, and the server's guard rails |
-| Production build | `npm run build`, then `npm start` | Builds; every visitor loads 334 KB, and the Operator tab (2.7 MB, mostly the QoreChain SDK) loads only when opened |
+| Test suite | `npm test` (`test/*.test.mjs`) | 57/57 on Node 22 (testbench VM): every quorum refusal rule and threshold, epoch rotation, the two-way binding rules (one-sided, wrong pair, too late, rebinding), failed account reads never reading as "no key", the sealing-secret backup, MsgSend bytes identical to `cosmjs-types`, QoreX error messages, the relay's gate and rate limit, and the server's guard rails, including gzip and caching |
+| Production build | `npm run build`, then `npm start` | Every visitor loads 116 KB of script (gzip; 341 KB raw), and the Operator tab (515 KB gzip, mostly the QoreChain SDK) loads only when opened |
+| Deployed site with a real wallet | https://quorate.up.railway.app, 21 November 2026 | The builder's QoreX wallet opened QSA-007 (simulated) on the live site and acknowledged it: tx `6F7D7D295DB6A74DBD581E52C6658B77A819DA7D2ED6CF7156D899060F77B9A7`, block 10475667, code 0; `scripts/quorum.mjs` counts QSA-007 1/4 ready |
+| Demo video | https://youtu.be/APWbCBj5VOo | 2:12. Every scene is the live site or real terminal output; the wallet scene is the builder's own recording, with 5 s of unlocking QoreX cut, as the film says on screen |
 
 The QoreX steps were first exercised with the official QoreX wallet mock, a test double that signs for real on testnet with the same hybrid scheme. The real extension then surfaced the `MsgRegisterKEMKey` refusal, and the sealing-account flow was run end to end with the real QoreX extension (table below).
 
-Still to do: a public deployment and the demo video.
+Not done: no real validator has registered an encryption key yet (0 of 8 on mainnet, 0 of 4 on testnet), so every advisory so far is simulated. QoreSeal is pending external review before 1.0.
 
 ### Real QoreX wallet (19 November 2026)
 
